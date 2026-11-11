@@ -28,7 +28,22 @@ async function uploadAndDownload(page,slug,{name,bytes,mime},ext){
  assert(dl.suggestedFilename().endsWith(ext),slug+' wrong download suffix '+dl.suggestedFilename());
  const downloaded=fs.readFileSync(await dl.path());
  assert(downloaded.length>10,slug+' output empty');
- report.tests.push({route:slug,download:dl.suggestedFilename(),bytes:downloaded.length,elapsedMs:Date.now()-started});
+
+ const qualityView=page.locator('#quality');
+ await qualityView.waitFor({state:'visible',timeout:10000});
+ const status=await qualityView.getAttribute('data-status');
+ assert(['partial','review','checked'].includes(status),'Quality status missing '+slug);
+ const jsonDownloadWait=page.waitForEvent('download');
+ await page.locator('#quality-download').click();
+ const qdl=await jsonDownloadWait;
+ const q=JSON.parse(fs.readFileSync(await qdl.path(),'utf8'));
+ assert(q.kind==='local-structural-quality-report','Wrong quality report kind '+slug);
+ assert(q.input?.features===1&&q.output?.features===1,'Quality report feature counts not 1/1 '+slug);
+ assert(q.checks.some(c=>c.id==='feature-count'&&c.status==='pass'),'Feature count check should pass '+slug);
+ assert(q.checks.some(c=>c.id==='attribute-fidelity'&&c.status==='unavailable'),'Attribute check incorrectly certified '+slug);
+ report.tests.push({route:slug,quality:{status,featuresIn:q.input.features,featuresOut:q.output.features,checks:q.checks.map(x=>({id:x.id,status:x.status}))}});
+
+ Object.assign(report.tests.at(-1),{download:dl.suggestedFilename(),bytes:downloaded.length,elapsedMs:Date.now()-started});
  return downloaded;
 }
 try{
