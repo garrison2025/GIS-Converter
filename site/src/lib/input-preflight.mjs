@@ -88,7 +88,7 @@ function extractZipDirectory(buf){
  if(ptr!==end)fail('unparsed ZIP central directory data');
  return {entries:records,totalExpanded};
 }
-export async function preflightGISInput(file,source){
+export async function preflightGISInput(file,source,target){
  if(!(file instanceof Blob) || file.size===0 || file.size>MAX_INPUT_BYTES) fail('file empty or exceeds 15 MiB limit');
  const allowed=extensions[source];
  if(!allowed)fail('unsupported source format');
@@ -102,6 +102,21 @@ export async function preflightGISInput(file,source){
   if(['kml','gpx'].includes(source)){
    const text=new TextDecoder('utf-8').decode(prefix);
    if(/<!DOCTYPE|<!ENTITY/i.test(text))fail('XML DTD/entities unsupported');
+  }
+  if(source==='geojson'&&target==='shp'){
+   let doc;
+   try{doc=JSON.parse(await file.text())}catch{fail('GeoJSON is not valid JSON')}
+   if(doc?.type!=='FeatureCollection'||!Array.isArray(doc.features)||!doc.features.length)
+    fail('GeoJSON must be a non-empty FeatureCollection for Shapefile output');
+   const groupOf={Point:'point',MultiPoint:'point',LineString:'line',MultiLineString:'line',Polygon:'polygon',MultiPolygon:'polygon'};
+   const groups=new Set();
+   for(const entry of doc.features){
+     const g=entry?.geometry;
+     const family=g?.type&&groupOf[g.type];
+     if(!family)fail('null, unsupported or GeometryCollection features cannot safely become one Shapefile layer');
+     groups.add(family);
+   }
+   if(groups.size!==1)fail('mixed geometry families cannot safely become one Shapefile layer; split points, lines and polygons into separate files');
   }
   return {kind:'text',source,inputBytes:file.size};
  }

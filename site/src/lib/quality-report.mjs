@@ -209,3 +209,19 @@ export async function createGISQualityReport(input,source,output,target){
  const status=checks.some(c=>c.status==='review')?'review':checks.some(c=>c.status==='unavailable')?'partial':'checked';
  return {schemaVersion:1,kind:'local-structural-quality-report',status,source,target,input:before,output:after,checks,disclaimer:'Automated structural comparison only; NOT data certification. Complex geometries, attributes, projections and rendering require independent GIS review.'};
 }
+
+/**
+ * Fail closed only on independently comparable critical invariants.
+ * A mere "unavailable" remains a warning, not a false positive certification.
+ */
+export function assertNoDetectedCriticalDataLoss(report){
+ const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
+   (c.id==='feature-count'||c.id==='coordinate-bounds'));
+ if(errors.length){
+  const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
+    '. The generated file was withheld to prevent silent GIS data loss.');
+  e.code='DATA_LOSS';
+  throw e;
+ }
+ return true;
+}

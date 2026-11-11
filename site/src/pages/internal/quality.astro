@@ -42,6 +42,8 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   assert(out.type==='FeatureCollection'&&out.features?.length===2,'preserve two features');
   const labels=out.features.map(f=>f.properties?.Label).sort();
   assert(labels.includes('北京公园')&&labels.includes('岛屿群'),'Chinese labels roundtrip');
+  const counts=out.features.map(f=>f.properties?.Count).sort((a,b)=>a-b);
+  assert(JSON.stringify(counts)==='[2,3]','integer attribute values preserved');
   const metrics=out.features.map(f=>geometryMetrics(f.geometry));
   const polygons=metrics.reduce((s,f)=>s+f.polygons,0),holes=metrics.reduce((s,f)=>s+f.holes,0),area=metrics.reduce((s,f)=>s+f.area,0);
   assert(polygons===3,'three polygon parts preserved');
@@ -73,6 +75,64 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
    assert(Math.abs(point.coordinates[0]-116.4)<.0001&&Math.abs(point.coordinates[1]-39.9)<.0001,'3857 to 4326 coordinate accuracy');
    return {sourceProjection:'EPSG:3857',targetProjection:'EPSG:4326',coordinates:point.coordinates,files:names};
  });
+
+ await mark('3857 projected polygon with an inner ring to WGS84',async()=>{
+  const input={type:'FeatureCollection',features:[{type:'Feature',properties:{Code:'A-100',Population:2094},
+    geometry:{type:'Polygon',coordinates:[[
+      [116.3,39.8],[116.5,39.8],[116.5,40],[116.3,40],[116.3,39.8]
+    ],[
+      [116.35,39.85],[116.35,39.9],[116.4,39.9],[116.4,39.85],[116.35,39.85]
+    ]]}}]};
+  const inputFile=new File([JSON.stringify(input)],'source-polygon.geojson');
+  const o=await gdal.open(inputFile);
+  const ds=o.datasets?.[0];assert(ds,'open source polygon');
+  const pack=new JSZip();
+  try{
+    const generated=await gdal.ogr2ogr(ds,['-f','ESRI Shapefile','-t_srs','EPSG:3857','-lco','ENCODING=UTF-8'],'projected-polygon');
+    const all=Array.isArray(generated?.all)?generated.all:[generated];
+    for(const ref of all){
+      const name=String(ref?.local||ref).split('/').pop();
+      const bytes=await gdal.getFileBytes(ref);
+      if(bytes?.length)pack.file(name,bytes);
+    }
+  }finally{try{gdal.close(ds)}catch{}}
+  assert(Object.keys(pack.files).some(x=>x.endsWith('.prj')),'projected polygon CRS .prj exists');
+  const projected=new File([await pack.generateAsync({type:'uint8array'})],'proj-polygon.zip');
+  const processed=await convertGdal(gdal,projected,'shp','geojson');
+  const data=JSON.parse(new TextDecoder().decode(processed.bytes));
+  assert(data.features?.length===1,'polygon feature retained');
+  const feature=data.features[0];
+  assert(feature.properties.Code==='A-100'&&feature.properties.Population===2094,'text + numeric fields retained');
+  const geometry=feature.geometry;assert(geometry.type==='Polygon','polygon geometry retained');
+  assert(geometry.coordinates.length===2,'inner hole retained');
+  const expected=geometryMetrics(input.features[0].geometry);
+  const got=geometryMetrics(geometry);
+  assert(expected.holes===got.holes,'hole count retained');
+  assert(Math.abs(got.area-expected.area)<.000015,'polygon projected roundtrip area accuracy');
+  const bounds=(coords)=>{
+    const flat=coords.flatMap(x=>Array.isArray(x[0])?x:[x]).flatMap(x=>Array.isArray(x[0])?x:[x]);
+    return [Math.min(...flat.map(p=>p[0])),Math.min(...flat.map(p=>p[1])),Math.max(...flat.map(p=>p[0])),Math.max(...flat.map(p=>p[1]))]
+  };
+  const expectedBox=bounds(input.features[0].geometry.coordinates);
+  const actualBox=bounds(geometry.coordinates);
+  assert(expectedBox.every((v,i)=>Math.abs(v-actualBox[i])<.0001),'roundtripped polygon bounds in WGS84');
+  return {features:1,holes:got.holes,area:got.area,properties:feature.properties.Code+' / '+feature.properties.Population,bounds:actualBox};
+ });
+ await mark('mixed point/polygon SHP conversion must not silently omit data',async()=>{
+   const input={type:'FeatureCollection',features:[
+     {type:'Feature',properties:{Label:'First'},geometry:{type:'Point',coordinates:[116.4,39.9]}},
+     {type:'Feature',properties:{Label:'Second'},geometry:{type:'Polygon',coordinates:[[[116,39],[117,39],[117,40],[116,39]]]}}
+   ]};
+   let converted=null;let reportedError=null;
+   try{converted=await convertGdal(gdal,new File([JSON.stringify(input)],'mixed.geojson'),'geojson','shp')}
+   catch(e){reportedError=String(e?.message||e)}
+   if(reportedError)return {outcome:'rejected',error:reportedError.slice(0,240)};
+   const result=await convertGdal(gdal,new File([converted.bytes],'mixed.zip'),'shp','geojson');
+   const parsed=JSON.parse(new TextDecoder().decode(result.bytes));
+   assert(parsed.features?.length===2,'mixed geometry conversion silently dropped features');
+   return {outcome:'preserved',features:parsed.features.length};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
