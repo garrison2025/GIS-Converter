@@ -16,7 +16,8 @@
     "smoke:ui": "node scripts/tool-ui-smoke.mjs",
     "smoke:compressed": "node scripts/compressed-gdal-smoke.mjs",
     "prepare:pages": "node scripts/prepare-pages-preview.mjs",
-    "smoke:wrangler": "node scripts/wrangler-pages-smoke.mjs"
+    "smoke:wrangler": "node scripts/wrangler-pages-smoke.mjs",
+    "smoke:gis-quality": "node scripts/quality-smoke.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",

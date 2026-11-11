@@ -34,6 +34,7 @@ export async function convertGdal(gdal,input,src,dst){
   if(src==='csv')options.push('-a_srs','EPSG:4326');
   else if(['shp','kml','kmz','gpx','geojson'].includes(dst))options.push('-t_srs','EPSG:4326');
   if(dst==='csv')options.push('-lco','GEOMETRY=AS_XY');
+  if(dst==='shp')options.push('-lco','ENCODING=UTF-8');
   files=await collect(gdal,await gdal.ogr2ogr(ds,options,'gis_'+src+'_to_'+dst));
  }finally{try{gdal.close(ds)}catch{}}
  if(dst==='shp'){
