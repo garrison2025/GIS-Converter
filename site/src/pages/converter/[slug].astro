@@ -31,7 +31,7 @@ form?.addEventListener('submit',async(event)=>{
   if(typeof window.initGdalJs!=='function')throw Error('GDAL runtime is missing.');
   const tuple=routes.find(r=>r[0]===form.dataset.slug);
   if(!tuple)throw Error('Invalid route');
-  const gdal=await window.initGdalJs({path:'/engine/gdal3',useWorker:false});
+  const gdal=await window.initGdalJs({path:'/engine/gdal3',useWorker:true});
   const output=await convertGdal(gdal,file.files[0],tuple[1],tuple[2]);
   if(linkUrl)URL.revokeObjectURL(linkUrl);
   linkUrl=URL.createObjectURL(new Blob([output.bytes],{type:output.mime}));

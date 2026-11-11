@@ -14,6 +14,7 @@ try{
  if(!ready)throw Error('Cannot start staging server');
  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
  const page=await browser.newPage({acceptDownloads:true});
+ await page.addInitScript(() => {const Original=window.Worker;window.__workerCreated=0;window.Worker=class extends Original{constructor(...args){super(...args);window.__workerCreated++}}});
  page.on('pageerror',e=>report.pageErrors.push(String(e)));
  await page.goto(root+'/');
  report.pages=await page.locator('a[href^="/converter/"]').count();
@@ -47,7 +48,9 @@ try{
    if(t.ext==='.zip'){
       const z=await JSZip.loadAsync(content);for(const ext of ['.shp','.shx','.dbf'])if(!Object.keys(z.files).some(n=>n.endsWith(ext)))throw Error('SHP ZIP lacks '+ext);
    }
-   report.tests.push({route:t.slug,status:'PASSED',bytes:content.length});
+   const workers=await page.evaluate(()=>window.__workerCreated);
+   if(workers<1)throw Error(t.slug+' did not initialize the expected Web Worker');
+   report.tests.push({route:t.slug,status:'PASSED',bytes:content.length,createdWorkers:workers});
  }
  report.status=report.pageErrors.length?'FAILED':'PASSED';
 }catch(e){report.status='FAILED';report.error=String(e?.stack||e);console.error(report.error)}
