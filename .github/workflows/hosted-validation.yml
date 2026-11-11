@@ -29,6 +29,8 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Probe independent cancellable classic Worker running real GDAL
         run: node scripts/isolated-worker-probe.mjs
+      - name: Reject hostile GIS archives before loading WebAssembly
+        run: npm run smoke:input-security
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
@@ -59,6 +61,7 @@ jobs:
             site/astro-tool-ui-result.json
             site/gis-quality-results.json
             site/task-lifecycle-result.json
+            site/input-preflight-results.json
             site/compressed-gdal-browser-result.json
             site/pages-preview-package-report.json
             site/wrangler-pages-result.json
