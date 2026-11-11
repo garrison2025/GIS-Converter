@@ -38,3 +38,14 @@ jobs:
             site/package-lock.json
           if-no-files-found: warn
 # No deployment, secrets, live billing, or production indexing.
+
+  billing-ledger-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Test D1-style billing logic without external payment calls
+        run: node --experimental-sqlite billing/tests/test_d1_adapter.mjs
