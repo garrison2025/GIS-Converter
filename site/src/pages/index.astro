@@ -1,8 +1,122 @@
 ---
 import {routes} from '../lib/gdal-matrix.mjs';
+import {formats} from '../data/content.mjs';
+const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
+ source,label:formats[source].name,links:routes.filter(([,s])=>s===source)
+})).filter(g=>g.links.length>0);
 ---
-<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="robots" content="noindex,nofollow"/><title>GIS Converter — Test Build</title>
-<style>body{font-family:system-ui,Arial,sans-serif;color:#192a42;background:#f7f9fc;line-height:1.5;margin:0}.shell{max-width:1000px;margin:auto;padding:32px 20px}header{display:flex;justify-content:space-between;gap:16px;align-items:center}h1{font-size:clamp(27px,4vw,45px)}.notice{padding:16px;border:1px solid #d9b384;border-radius:12px;background:#fff8e8}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:13px;margin:25px 0}.tile{display:block;text-decoration:none;background:white;color:#15243b;padding:20px;border:1px solid #d7e0ec;border-radius:13px}.tile:hover{border-color:#3d6ecc}.tag{font-size:12px;color:#5d6b7a}</style></head>
-<body><div class="shell"><header><strong>GIS Converter / Engineering</strong><small>Not released</small></header><h1>Convert GIS files locally</h1><p class="notice">This is an unreleased GDAL/WASM engineering site. Output data is not yet independently certified. The site is excluded from search engines and must not be used for critical decisions.</p><div class="grid">
-{routes.map(([slug,source,target])=><a class="tile" href={'/converter/'+slug+'/'}><strong>{source.toUpperCase()} → {target.toUpperCase()}</strong><div class="tag">Test browser conversion</div></a>)}
-</div><p>Free conversion · no login · no uploads · no live payment. Planned SaaS features are not active.</p></div></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+ <meta charset="UTF-8"/>
+ <meta name="viewport" content="width=device-width, initial-scale=1"/>
+ <meta name="robots" content="noindex,nofollow"/>
+ <meta name="description" content="Browser-based KML, KMZ, Shapefile, GeoJSON, GPX and CSV conversions powered by GDAL WebAssembly. Your GIS input stays in the browser."/>
+ <title>GIS Converter — Convert KML, KMZ, SHP, GeoJSON, GPX & CSV</title>
+ <style>
+ :root{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#193047;background:#f7fafc;font-synthesis:none}
+ *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;line-height:1.65}a{color:inherit}
+ .container{width:min(1080px,calc(100% - 36px));margin:auto}
+ header{background:#fff;border-bottom:1px solid #e0e8ed}
+ .nav{min-height:72px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+ .logo{text-decoration:none;font-size:19px;font-weight:800;letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
+ .symbol{display:inline-grid;place-items:center;width:35px;height:35px;border-radius:11px;background:#0d766c;color:#fff;font-size:22px}
+ .navlinks{display:flex;gap:22px;align-items:center;color:#486171;font-size:14px}
+ .navlinks a{text-decoration:none}.navlinks a:hover{text-decoration:underline}
+ .hero{background:radial-gradient(ellipse at 85% 10%,#e0f7f0 0,transparent 55%),linear-gradient(160deg,#f9fdfb,#eef5fb);border-bottom:1px solid #e2ebe9;padding:74px 0 65px}
+ .eyebrow{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:#06776d;margin:0 0 12px}
+ h1{font-size:clamp(34px,5vw,59px);line-height:1.13;letter-spacing:-.046em;margin:0 0 18px;max-width:750px}
+ .intro{color:#466374;font-size:17px;max-width:690px;margin:0 0 25px}
+ .herocta{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
+ .primary{text-decoration:none;color:#fff;background:#08796d;padding:12px 22px;font-weight:700;border-radius:11px;display:inline-flex;gap:10px;align-items:center}
+ .primary:hover{background:#06675d}.micro{font-size:13px;color:#607582}
+ .stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
+ .chip{font-size:13px;background:#fff;border:1px solid #dae9e5;border-radius:99px;padding:6px 13px;color:#33586b}
+ .section{padding:50px 0}
+ .sectionhead{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+ h2{font-size:clamp(24px,3vw,32px);line-height:1.25;letter-spacing:-.026em;margin:0 0 8px}
+ .sectionhead p{color:#627988;margin:0}
+ .search{font:inherit;color:#18394b;width:min(330px,100%);padding:12px 14px;border:1px solid #cddde2;border-radius:10px;background:white}
+ .search:focus{outline:3px solid #bde8df;border-color:#08796d}
+ .group{margin-top:33px}.grouphead{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+ .grouphead h3{font-size:18px;margin:0}.grouphead span{font-size:13px;color:#647b89}
+ .cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+ .tool{text-decoration:none;display:block;padding:20px 20px 17px;background:#fff;border:1px solid #dbe6ec;border-radius:14px;min-height:150px;box-shadow:0 3px 15px #0c3c5710;transition:transform .16s,border-color .16s}
+ .tool:hover,.tool:focus-visible{transform:translateY(-2px);border-color:#1a9e91;outline:none}
+ .tool strong{font-size:18px;display:block;line-height:1.35}
+ .tool p{font-size:13px;color:#536c7b;margin:10px 0 12px;line-height:1.5}
+ .tool span{font-size:13px;font-weight:700;color:#08786e}
+ .notice{border-left:4px solid #d99d3a;background:#fff8e8;border-radius:0 11px 11px 0;padding:14px 18px;margin-top:34px;font-size:14px;color:#5c4a2d}
+ .explainer{background:#eaf3f3;padding:50px 0}
+ .steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;margin-top:24px}
+ .step{background:#fff;border:1px solid #dde9e7;border-radius:14px;padding:24px}
+ .step .num{display:inline-grid;place-items:center;width:31px;height:31px;background:#e4f5ee;color:#0a786c;font-weight:800;border-radius:9px}
+ .step h3{margin:13px 0 6px;font-size:17px}.step p{margin:0;font-size:14px;color:#557080}
+ .footer{padding:26px 0;border-top:1px solid #e1e9ec;font-size:13px;color:#607583;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+ [hidden]{display:none!important}
+ @media(max-width:800px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:1fr;gap:12px}.hero{padding:50px 0}.navlinks{gap:10px}}
+ @media(max-width:530px){.cards{grid-template-columns:1fr}.navlinks a:last-child{display:none}.tool{min-height:120px}.section{padding:35px 0}.intro{font-size:16px}}
+ @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.tool{transition:none}}
+ </style>
+</head>
+<body>
+ <header><div class="container nav">
+ <a class="logo" href="/"><span class="symbol" aria-hidden="true">◇</span>GIS Converter</a>
+ <nav class="navlinks" aria-label="Main navigation"><a href="#tools">Conversion tools</a><a href="#how">How it works</a><a href="#formats">Formats</a></nav>
+ </div></header>
+ <main>
+ <section class="hero">
+  <div class="container">
+   <p class="eyebrow">Private by design · GDAL-powered</p>
+   <h1>Convert GIS files in your browser.</h1>
+   <p class="intro">Convert KML, KMZ, Shapefile, GeoJSON, GPX and CSV without uploading your data to a conversion server. Choose one of 19 format routes and download the result locally.</p>
+   <div class="herocta"><a href="#tools" class="primary">Explore 19 converters <span aria-hidden="true">→</span></a><span class="micro">No account required · 15 MiB input limit</span></div>
+   <div class="stats" aria-label="Product facts"><span class="chip">Files stay in your browser</span><span class="chip">GDAL/WebAssembly engine</span><span class="chip">19 conversion routes</span><span class="chip">Free engineering preview</span></div>
+  </div>
+ </section>
+ <section id="tools" class="section container">
+  <div class="sectionhead"><div><h2>Choose your conversion</h2><p>Browse by source format or filter the tools.</p></div>
+   <label><span class="sr-only" style="position:absolute;left:-9999px">Search conversion tools</span><input class="search" id="filter" type="search" placeholder="Search, e.g. KMZ to SHP" aria-label="Search conversion tools"/></label>
+  </div>
+  {groups.map(g=><section class="group" data-group={g.source} id={'from-'+g.source}>
+    <div class="grouphead"><h3>From {g.label}</h3><span>{g.links.length} tools</span></div>
+    <div class="cards">{g.links.map(([slug,src,dst])=><a class="tool" href={'/converter/'+slug+'/'} data-search={(slug+' '+src+' '+dst).toLowerCase()}>
+      <strong>{formats[src].name} <span aria-hidden="true">→</span> {formats[dst].name}</strong>
+      <p>{formats[src].long} to {formats[dst].long}</p>
+      <span>Open converter →</span>
+    </a>)}</div>
+  </section>)}
+  <p id="empty" hidden role="status">No tools match that search. Try a format such as KML, SHP or GeoJSON.</p>
+  <div class="notice" role="note"><strong>Engineering preview:</strong> Small sample conversions have been tested, but complex geometry and metadata require review. Do not use generated files for safety-critical or professional decisions without validating them in GIS software.</div>
+ </section>
+ <section id="how" class="explainer">
+  <div class="container"><h2>How it works</h2><p>GDAL runs in a dedicated background Web Worker in your browser; the file is not sent to a remote conversion service.</p>
+  <div class="steps">
+    <div class="step"><span class="num">1</span><h3>Choose the route</h3><p>Select the input and output formats your GIS workflow needs.</p></div>
+    <div class="step"><span class="num">2</span><h3>Upload locally</h3><p>Choose a valid GIS file. Large or suspicious archives are rejected before processing.</p></div>
+    <div class="step"><span class="num">3</span><h3>Review and download</h3><p>Save the result, then check coordinate reference system, geometry and properties.</p></div>
+  </div></div>
+ </section>
+ <section id="formats" class="section container"><h2>Formats we support</h2><p class="intro">KML/KMZ are widely used with Google Earth; Shapefile is a multi-file GIS dataset; GeoJSON is a web mapping format; GPX is for GPS tracks and waypoints; CSV works best with longitude and latitude columns.</p>
+  <p class="micro">See each converter for input requirements and known limits. This site remains noindex during quality review.</p>
+ </section>
+ </main>
+ <footer class="container footer"><span>© GIS Converter · Engineering preview</span><span>Browser-local conversion · No payment features enabled</span></footer>
+ <script>
+ const search=document.querySelector('#filter');
+ search?.addEventListener('input',()=>{
+  const query=search.value.trim().toLowerCase().replace(/\s+/g,'-');
+  let visible=0;
+  document.querySelectorAll('.group').forEach(group=>{
+   let groupCount=0;
+   group.querySelectorAll('.tool').forEach(card=>{
+    const matches=!query||card.dataset.search.replace(/\s+/g,'-').includes(query)||card.dataset.search.includes(search.value.trim().toLowerCase());
+    card.hidden=!matches;
+    if(matches){visible++;groupCount++}
+   });
+   group.hidden=groupCount===0;
+  });
+  document.querySelector('#empty').hidden=visible>0;
+ });
+ </script>
+</body></html>
