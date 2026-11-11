@@ -62,10 +62,11 @@ async function inspect(format,bytes){
   check((shx.length-100)/8===1,'Expected 1 SHX indexed geometry');
   const shpdv=new DataView(shp.buffer,shp.byteOffset,shp.byteLength);
   const off=new DataView(shx.buffer,shx.byteOffset,shx.byteLength).getInt32(100,false)*2;
-  check(shpdv.getInt32(off+8,true)===1,'Not point SHP');
+  const shapeType=shpdv.getInt32(off+8,true);
+  check([1,11,21].includes(shapeType),'Not a supported point/PointZ/PointM SHP: '+shapeType);
   const coord=[shpdv.getFloat64(off+12,true),shpdv.getFloat64(off+20,true)];
   check(approx(coord[0],116.4)&&approx(coord[1],39.9),'SHP coordinate drift '+coord);
-  return {shpCount:1,coordinates:coord,entries:names};
+  return {shpCount:1,shapeType,coordinates:coord,entries:names};
  }
  throw Error('Unknown output '+format);
 }
