@@ -1,0 +1,36 @@
+name: Generate and commit dependency lockfile (dev only)
+on:
+  push:
+    branches: [dev/p10-integration-ci]
+    paths:
+      - site/package.json
+      - .github/workflows/lockfile-sync.yml
+permissions:
+  contents: write
+jobs:
+  lockfile:
+    if: github.repository == 'garrison2025/GIS-Converter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Generate npm lockfile only, never run package lifecycle scripts
+        working-directory: site
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Confirm lockfile and commit to development branch
+        shell: bash
+        run: |
+          test -s site/package-lock.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile unchanged"
+            exit 0
+          fi
+          git commit -m "chore: lock reproducible npm dependencies"
+          git push origin HEAD:dev/p10-integration-ci
+# No deployment, no production changes, no secrets.
