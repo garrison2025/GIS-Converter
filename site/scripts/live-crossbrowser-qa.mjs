@@ -33,7 +33,9 @@ for(const [name,launcher,ctxOpts] of [
   engine.viewportWidth=await page.evaluate(()=>window.innerWidth);
   engine.scrollWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
   assert(engine.scrollWidth<=engine.viewportWidth+2,'Horizontal overflow '+engine.viewportWidth+' vs '+engine.scrollWidth);
+  assert((await page.locator('h1').textContent()).includes('online file converter'),'New tool UI not deployed');
   await page.locator('#file').setInputFiles({name:'cross.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:Buffer.from(KML)});
+  assert((await page.locator('#file-info').textContent()).includes('MiB selected'),'File summary not shown');
   const start=Date.now();await page.locator('#submit').click();
   try{await page.locator('#result').waitFor({state:'visible',timeout:90000})}
   catch{throw Error('Conversion failure: '+(await page.locator('#error').textContent())+'; status='+(await page.locator('#status').textContent()))}

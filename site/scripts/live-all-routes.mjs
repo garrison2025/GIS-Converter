@@ -88,6 +88,12 @@ try{
    csv:{name:'sample.csv',mimeType:'text/csv',buffer:Buffer.from(csv)},
    geojson:{name:'sample.geojson',mimeType:'application/geo+json',buffer:Buffer.from(geojson)}
  };
+ await page.goto(origin+'/');
+ check((await page.title()).startsWith('GIS Converter — Convert'),'New Cloudflare homepage not deployed');
+ await page.locator('#filter').fill('shp-to-geojson');
+ check(await page.locator('a.tool:visible').count()===1,'Live tool search broken');
+ await page.locator('#filter').fill('');
+ check(await page.locator('a.tool:visible').count()===19,'Tool list not restored');
  const ordered=[routes.find(r=>r[0]==='kml-to-shp'),...routes.filter(r=>r[0]!=='kml-to-shp')];
  for(const [slug,source,target] of ordered){
   const start=Date.now();
