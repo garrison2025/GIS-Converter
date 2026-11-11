@@ -62,6 +62,16 @@ try{
    if(t.ext==='.zip'){
       const z=await JSZip.loadAsync(content);for(const ext of ['.shp','.shx','.dbf'])if(!Object.keys(z.files).some(n=>n.endsWith(ext)))throw Error('SHP ZIP lacks '+ext);
    }
+   const quality=page.locator('#quality');
+   if(!(await quality.isVisible()))throw Error('Quality report is missing from '+t.slug);
+   const summary=await page.locator('#quality-summary').textContent();
+   if(!summary.includes('Input features: 1')||!summary.includes('Output features: 1'))throw Error('Feature counts missing '+t.slug+': '+summary);
+   const qaWait=page.waitForEvent('download');
+   await page.locator('#quality-download').click();
+   const qaDownload=await qaWait;
+   const qaJSON=JSON.parse(fs.readFileSync(await qaDownload.path(),'utf8'));
+   if(!qaJSON.checks?.some(c=>c.id==='feature-count'&&c.status==='pass'))throw Error('Feature count independent check not passed '+t.slug);
+   if(!qaJSON.checks?.some(c=>c.id==='attribute-fidelity'&&c.status==='unavailable'))throw Error('Quality report incorrectly certified attributes '+t.slug);
    const workers=await page.evaluate(()=>window.__workerCreated);
    if(workers<1)throw Error(t.slug+' did not initialize the expected Web Worker');
    report.tests.push({route:t.slug,status:'PASSED',bytes:content.length,createdWorkers:workers});

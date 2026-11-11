@@ -19,6 +19,8 @@ jobs:
           node-version: 22.23.4
       - name: Install audited lockfile deterministically with npm ci
         run: npm ci --no-audit --no-fund
+      - name: Independently test bounded GIS structural quality report
+        run: npm run smoke:quality-report
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
