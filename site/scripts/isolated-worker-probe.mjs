@@ -7,6 +7,7 @@ try{
  for(let i=0;i<50;i++){try{if((await fetch('http://127.0.0.1:8788/')).ok)break}catch{}await new Promise(r=>setTimeout(r,200))}
  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
  const page=await browser.newPage();
+ await page.goto('http://127.0.0.1:8788/');
  const result=await page.evaluate(async()=>{
   return await new Promise(resolve=>{
    const w=new Worker('/internal/isolated/worker.js');
