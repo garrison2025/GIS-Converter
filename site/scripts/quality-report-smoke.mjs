@@ -103,6 +103,21 @@ await test('CRS comparison suppressed for projected SHP',async()=>{
  assert.equal(r.input.crs,'unknown');
  assert.equal(check(r,'coordinate-bounds').status,'unavailable');
 });
+await test('Explicit standard CRS84 GeoJSON is WGS84 without false alarms',async()=>{
+ const original=JSON.parse(fixture());
+ original.crs={type:'name',properties:{name:'urn:ogc:def:crs:OGC:1.3:CRS84'}};
+ const r=await createGISQualityReport(makeFile(fixture()),'geojson',buf(JSON.stringify(original)),'geojson');
+ assert.equal(r.output.crs,'WGS84');assert.equal(r.output.issues.length,0);
+ assert.equal(check(r,'coordinate-bounds').status,'pass');
+});
+await test('Unrecognized projected GeoJSON CRS remains unverified',async()=>{
+ const original=JSON.parse(fixture());
+ original.crs={type:'name',properties:{name:'EPSG:3857'}};
+ const r=await createGISQualityReport(makeFile(fixture()),'geojson',buf(JSON.stringify(original)),'geojson');
+ assert.equal(r.output.crs,'unknown');
+ assert.equal(r.status,'review');
+ assert.equal(check(r,'coordinate-bounds').status,'unavailable');
+});
 await test('Unsafe JSON does not leak source features into quality report',async()=>{
  const geo=fixture([116.4,39.9],{PRIVATE:'private-person-name'});
  const r=await createGISQualityReport(makeFile(geo),'geojson',buf(geo),'geojson');
