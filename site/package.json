@@ -20,7 +20,8 @@
     "smoke:gis-quality": "node scripts/quality-smoke.mjs",
     "smoke:cancel": "node scripts/task-lifecycle-smoke.mjs",
     "smoke:input-security": "node scripts/input-preflight-smoke.mjs",
-    "smoke:gis-stress": "node scripts/multi-feature-stress.mjs"
+    "smoke:gis-stress": "node scripts/multi-feature-stress.mjs",
+    "build:pages": "npm run stage:gdal && npm run pack:gdal && npm run build && npm run prepare:pages"
   },
   "dependencies": {
     "astro": "7.4.8",
