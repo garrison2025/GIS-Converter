@@ -18,7 +18,12 @@ permissions:
   contents: read
 jobs:
   preview:
-    if: github.ref == 'refs/heads/dev/p10-integration-ci' && ((github.event_name == 'workflow_dispatch' && inputs.confirm == 'PREVIEW_ONLY') || (github.event_name == 'push' && github.event.head_commit.message == 'manual: gis preview'))
+    if: >-
+      github.ref == 'refs/heads/dev/p10-integration-ci' &&
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.confirm == 'PREVIEW_ONLY') ||
+        (github.event_name == 'push' && github.event.head_commit.message == 'manual: gis preview')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: gis-converter-preview
