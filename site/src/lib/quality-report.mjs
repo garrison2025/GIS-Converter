@@ -35,8 +35,11 @@ function parseGeojson(bytes){
  }
  meta.features=data.features.length;meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.pointOnly=valid&&pointsOnly;meta.complete=valid;
- meta.crs=(!data.crs)?'WGS84':'unknown';
- if(data.crs)meta.issues.push('Legacy GeoJSON CRS declaration: coordinate comparison disabled');
+ const declared=String(data.crs?.properties?.name||'').trim().toUpperCase();
+ const known=new Set(['CRS84','OGC:CRS84','URN:OGC:DEF:CRS:OGC:1.3:CRS84','EPSG:4326','URN:OGC:DEF:CRS:EPSG::4326','URN:OGC:DEF:CRS:EPSG:6.6:4326']);
+ const knownWGS84=!data.crs||data.crs?.type==='name'&&known.has(declared);
+ meta.crs=knownWGS84?'WGS84':'unknown';
+ if(data.crs&&!knownWGS84)meta.issues.push('Unrecognized GeoJSON CRS declaration: WGS84 coordinates cannot be assumed');
  if(!valid)meta.issues.push('Some GeoJSON geometries could not be structurally inspected');
  return meta;
 }
