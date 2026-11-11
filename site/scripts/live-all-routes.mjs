@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import {chromium} from 'playwright';
 import JSZip from 'jszip';
-const origin='https://gis-converter.pages.dev';
+const origin=process.env.GIS_BASE_URL||'https://gis-converter.pages.dev';
 const routes=[
 ['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
 ['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
