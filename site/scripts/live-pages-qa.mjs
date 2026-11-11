@@ -36,6 +36,7 @@ try{
  const paths=[...root.body.matchAll(/href="(\/converter\/[a-z-]+\/)"/g)].map(m=>m[1]);
  assert(new Set(paths).size===19,'Homepage route count is '+new Set(paths).size+', expected 19');
  report.homepageLinks=paths.length;
+ assert(root.body.includes('Convert GIS files in your browser.'),'New homepage has not deployed');
  const robots=await httpCheck('robots','/robots.txt');
  assert(/Disallow:\s*\//i.test(robots.body),'robots.txt does not disallow indexing');
  const page1=await httpCheck('kml-to-geojson','/converter/kml-to-geojson/');
@@ -52,6 +53,12 @@ try{
  const page=await ctx.newPage();
  page.on('pageerror',e=>report.browserErrors.push(String(e)));
  page.on('response',resp=>{if(resp.status()>=400&&resp.url().startsWith(origin))report.errors.push('HTTP '+resp.status()+' '+resp.url())});
+ await page.goto(origin+'/');
+ await page.locator('#filter').fill('kmz-to-shp');
+ assert(await page.locator('a.tool:visible').count()===1,'Live search does not filter to KMZ→SHP');
+ await page.locator('#filter').fill('');
+ assert(await page.locator('a.tool:visible').count()===19,'Live search clear did not restore all tools');
+ report.searchFilter='PASSED';
  const kml='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Live Test</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
  const geoBytes=await uploadAndDownload(page,'kml-to-geojson',{name:'test.kml',bytes:Buffer.from(kml),mime:'application/vnd.google-earth.kml+xml'},'.geojson');
  const obj=JSON.parse(geoBytes.toString('utf8'));
