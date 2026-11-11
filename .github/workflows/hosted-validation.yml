@@ -35,6 +35,10 @@ jobs:
         run: npm run smoke:ui
       - name: Real browser GDAL test using only gzip-encoded WASM response
         run: npm run smoke:compressed
+      - name: Prepare Pages package (strip raw oversized WASM)
+        run: npm run prepare:pages
+      - name: Verify Pages Function in local Wrangler runtime with real GDAL/WASM
+        run: npm run smoke:wrangler
       - name: Save evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -47,6 +51,8 @@ jobs:
             site/gdal-route-matrix.json
             site/astro-tool-ui-result.json
             site/compressed-gdal-browser-result.json
+            site/pages-preview-package-report.json
+            site/wrangler-pages-result.json
             site/package-lock.json
           if-no-files-found: warn
   billing-ledger-offline:
