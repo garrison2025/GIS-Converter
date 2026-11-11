@@ -29,7 +29,7 @@ const run=async()=>{
     const info=await inspectResult(dst,result);
     record.tested.push({id,status:'PASSED',ms:Math.round(performance.now()-start),size:result.bytes.length,info});
    }catch(e){
-    record.tested.push({id,status:'FAILED',error:String(e?.stack||e)});
+    record.tested.push({id,status:'FAILED',error:e instanceof Error?e.stack:JSON.stringify(e)});
    }
    write();
   }
