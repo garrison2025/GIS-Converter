@@ -17,8 +17,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22.23.4
-      - name: Install locked versions and generate lockfile in CI
-        run: npm install --no-audit --no-fund
+      - name: Install audited lockfile deterministically with npm ci
+        run: npm ci --no-audit --no-fund
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file

@@ -1,0 +1,75 @@
+name: GIS Converter — manually approved Cloudflare Pages preview
+on:
+  workflow_dispatch:
+    inputs:
+      cloudflare_pages_project:
+        description: "Existing Cloudflare Pages project name (preview only)"
+        required: true
+        type: string
+      confirm:
+        description: "Enter PREVIEW_ONLY; never a production domain"
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: github.ref == 'refs/heads/dev/p10-integration-ci' && inputs.confirm == 'PREVIEW_ONLY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: gis-converter-preview
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Verify cloud deployment is deliberately configured
+        env:
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PROJECT_NAME: ${{ inputs.cloudflare_pages_project }}
+        shell: bash
+        run: |
+          test -n "$CF_ACCOUNT" || { echo "::error::Missing Cloudflare account ID secret"; exit 1; }
+          test -n "$CF_TOKEN" || { echo "::error::Missing Cloudflare Pages scoped API token secret"; exit 1; }
+          [[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9-]{1,57}[a-z0-9]$ ]] || { echo "::error::Invalid Pages project name"; exit 1; }
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare GDAL runtime
+        run: |
+          npm run stage:gdal
+          npm run pack:gdal
+          npm run build
+      - name: Browser qualification
+        run: |
+          npx playwright install --with-deps chromium
+          npm run smoke:matrix
+          npm run smoke:gis-quality
+          npm run smoke:ui
+          npm run smoke:cancel
+          npm run smoke:input-security
+      - name: Stage static Pages package without oversized WASM
+        run: npm run prepare:pages
+      - name: Verify noindex and static publication safeguards
+        shell: bash
+        run: |
+          test -f dist/robots.txt
+          grep -q 'Disallow: /' dist/robots.txt
+          test -f dist/_headers
+          grep -q 'X-Robots-Tag: noindex' dist/_headers
+          test ! -f dist/engine/gdal3/gdal3WebAssembly.wasm
+          test -f dist/engine/gdal3/gdal3WebAssembly.wasm.gz
+      - name: Deploy only to a preview branch of the existing Pages project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_PAGES_PROJECT: ${{ inputs.cloudflare_pages_project }}
+        run: |
+          ./node_modules/.bin/wrangler pages deploy dist \
+            --project-name "$CF_PAGES_PROJECT" \
+            --branch "gis-converter-preview" \
+            --commit-hash "$GITHUB_SHA"
+# This workflow does NOT run automatically and does not publish the default Pages production branch.
