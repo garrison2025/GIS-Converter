@@ -50,6 +50,13 @@ const label=formats[from].name+' to '+formats[to].name;
  .error{white-space:pre-wrap;background:#fff1f1;color:#982c35!important;padding:10px 12px;border-radius:8px}
  .result{background:#e9f8f2;padding:16px;border-radius:12px;margin-top:15px}
  .result p{margin:0 0 12px;color:#245a4f}
+ .quality{background:#fff;border:1px solid #d5e6db;border-radius:11px;margin:16px 0;padding:15px;color:#284456}
+ .quality h3{font-size:16px;margin:0 0 6px}.quality p{font-size:13px;color:#3e5f69;margin:0 0 10px}
+ .quality ul{margin:0 0 13px;padding-left:20px;font-size:13px}.quality li{margin:5px 0}
+ .quality[data-status="review"]{border-color:#e5be8b;background:#fff9ef}
+ .quality[data-status="partial"]{border-color:#cfdce1}
+ .report-link{font-weight:700;font-size:13px;text-decoration:underline}
+ .quality strong{color:inherit}
  #warning{white-space:pre-wrap;color:#7b5c2b;font-size:13px}
  .note{border:1px solid #eeddbb;background:#fff9ef;border-radius:14px;padding:20px;margin-top:20px}
  .note strong{color:#805515}.note p{font-size:13px;color:#725e46;margin:7px 0 0}
@@ -93,6 +100,13 @@ const label=formats[from].name+' to '+formats[to].name;
   <section id="result" class="result" aria-label="Conversion result" hidden>
    <strong>Conversion complete</strong>
    <p id="details"></p><p id="warning"></p>
+   <section id="quality" class="quality" aria-label="GIS output quality checks" hidden>
+     <h3>Automated quality checks</h3>
+     <p id="quality-summary"></p>
+     <ul id="quality-checks"></ul>
+     <a href="#" id="quality-download" class="report-link" download="gis-quality-report.json">Download inspection report (JSON)</a>
+     <p class="small">A structural check, not a guarantee of data accuracy. Review geometry, fields and coordinates in independent GIS software.</p>
+   </section>
    <a id="download" class="download" href="#" download>Download {info.target.name} <span aria-hidden="true">↓</span></a>
   </section>
  </form>
@@ -128,7 +142,7 @@ const file=document.querySelector('#file'),error=document.querySelector('#error'
 const cancelButton=document.querySelector('#cancel');
 const selected=document.querySelector('#file-info');
 const placeholder=selected.textContent;
-let linkUrl=null,activeTask=null;
+let linkUrl=null,reportUrl=null,activeTask=null;
 file.addEventListener('change',()=>{
   if(!file.files?.length){selected.textContent=placeholder;return}
   const f=file.files[0];
@@ -136,6 +150,8 @@ file.addEventListener('change',()=>{
 });
 const resetOutput=()=>{
  if(linkUrl){URL.revokeObjectURL(linkUrl);linkUrl=null;}
+ if(reportUrl){URL.revokeObjectURL(reportUrl);reportUrl=null;}
+ document.querySelector('#quality').hidden=true;
  result.hidden=true;
  const dl=document.querySelector('#download');dl.removeAttribute('href');
 };
@@ -159,6 +175,29 @@ form?.addEventListener('submit',async(event)=>{
   const link=document.querySelector('#download');link.href=linkUrl;link.download=output.name;
   document.querySelector('#details').textContent='Generated '+output.name+' ('+(output.bytes.byteLength/1024).toFixed(1)+' KiB).';
   document.querySelector('#warning').textContent=(output.warning?output.warning+' ':'')+'Output has NOT been independently validated.';
+
+  const quality=output.quality;
+  if(quality&&Array.isArray(quality.checks)){
+    const view=document.querySelector('#quality'),list=document.querySelector('#quality-checks');
+    list.replaceChildren();
+    const countIn=quality.input?.features,countOut=quality.output?.features;
+    const part=(n)=>Number.isInteger(n)?n.toLocaleString():'not fully inspected';
+    document.querySelector('#quality-summary').textContent=
+      'Input features: '+part(countIn)+' · Output features: '+part(countOut)+
+      ' · Review status: '+(quality.status==='review'?'Issues found':quality.status==='checked'?'Checks passed':'Limited inspection');
+    for(const check of quality.checks){
+      const item=document.createElement('li');
+      const label=check.status==='pass'?'✓':check.status==='review'?'⚠':'—';
+      item.textContent=label+' '+check.detail;
+      list.appendChild(item);
+    }
+    view.dataset.status=quality.status;
+    reportUrl=URL.createObjectURL(new Blob([JSON.stringify(quality,null,2)],{type:'application/json'}));
+    const qa=document.querySelector('#quality-download');
+    qa.href=reportUrl;qa.download='gis-quality-'+form.dataset.slug+'.json';
+    view.hidden=false;
+  }
+
   result.hidden=false;status.textContent='Conversion completed; verify output in GIS software.';
  }catch(e){
   if(task&&activeTask!==task)return;
@@ -173,6 +212,7 @@ form?.addEventListener('submit',async(event)=>{
 window.addEventListener('pagehide',()=>{
  activeTask?.cancel();
  if(linkUrl)URL.revokeObjectURL(linkUrl);
+ if(reportUrl)URL.revokeObjectURL(reportUrl);
 });
 </script>
 </body>
