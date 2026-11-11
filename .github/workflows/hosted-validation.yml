@@ -27,6 +27,8 @@ jobs:
         run: npm run build
       - name: Install Chromium for real browser test
         run: npx playwright install --with-deps chromium
+      - name: Probe independent cancellable classic Worker running real GDAL
+        run: node scripts/isolated-worker-probe.mjs
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
@@ -47,6 +49,7 @@ jobs:
         with:
           name: gis-hosted-validation-evidence
           path: |
+            site/isolated-worker-probe.json
             site/gdal-browser-result.json
             site/gdal-runtime-report.json
             site/gdal-gzip-report.json
