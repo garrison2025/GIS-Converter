@@ -30,6 +30,32 @@ try{
  await page.waitForFunction(()=>document.body.dataset.done==='true',{timeout:120000});
  report.matrix=await page.evaluate(()=>window.__matrixResult);report.pageErrors=errors;
  if(report.matrix.status!=='PASSED'||report.matrix.tested.length!==6||errors.length)throw Error('Wrangler Pages function browser GDAL failed');
+
+ // Critical combined test: actual Astro page + actual SDK Worker + compressed Pages Function.
+ const ui=await browser.newPage({acceptDownloads:true});
+ await ui.addInitScript(()=>{
+   const NativeWorker=window.Worker;
+   window.__workerInstances=0;
+   window.Worker=class extends NativeWorker{
+     constructor(...args){super(...args);window.__workerInstances++}
+   };
+ });
+ const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Wrangler Worker</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
+ await ui.goto(root+'/converter/kml-to-geojson/');
+ await ui.locator('#file').setInputFiles({name:'wrangler.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:Buffer.from(kml)});
+ await ui.locator('#submit').click();
+ try{await ui.locator('#result').waitFor({state:'visible',timeout:120000})}
+ catch{throw Error('Compressed Pages WASM + SDK Worker UI conversion failed: '+await ui.locator('#error').textContent())}
+ const workerCount=await ui.evaluate(()=>window.__workerInstances);
+ if(workerCount<1)throw Error('GDAL SDK did not create Worker in Pages runtime');
+ const promise=ui.waitForEvent('download');
+ await ui.locator('#download').click();
+ const dl=await promise;
+ const data=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));
+ const point=data.features?.[0]?.geometry?.coordinates;
+ if(!point||Math.abs(point[0]-116.4)>.0001||Math.abs(point[1]-39.9)>.0001)throw Error('Wrangler worker output coordinate mismatch');
+ report.workerUI={status:'PASSED',createdWorkers:workerCount,downloadedFile:dl.suggestedFilename(),coordinates:point};
+
  report.status='PASSED';
 }catch(e){report.status='FAILED';report.error=String(e?.stack||e);report.tailLogs=logs.slice(-2200)}
 finally{
