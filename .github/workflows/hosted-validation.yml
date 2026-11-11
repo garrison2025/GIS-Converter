@@ -1,7 +1,7 @@
 name: GIS Converter hosted build and GDAL test (no deploy)
 on:
   push:
-    branches: [dev/p10-integration-ci]
+    branches: [dev/p10-integration-ci, main]
   workflow_dispatch:
 permissions:
   contents: read
