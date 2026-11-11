@@ -34,6 +34,7 @@ jobs:
         env:
           CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DISPATCH_PROJECT: ${{ inputs.cloudflare_pages_project }}
         shell: bash
         run: |
           test -n "$CF_ACCOUNT" || { echo "::error::Missing Cloudflare account ID secret"; exit 1; }
@@ -41,7 +42,7 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
             PROJECT_NAME="$(cat .preview-request)"
           else
-            PROJECT_NAME="${{ inputs.cloudflare_pages_project }}"
+            PROJECT_NAME="$DISPATCH_PROJECT"
           fi
           [[ "$PROJECT_NAME" =~ ^gis-converter-[a-z0-9-]{2,55}$ ]] || { echo "::error::Project name must start gis-converter-"; exit 1; }
           echo "CF_PAGES_PROJECT=$PROJECT_NAME" >> "$GITHUB_ENV"
@@ -49,7 +50,7 @@ jobs:
           response="$(curl -fsS --retry 2 --header "Authorization: Bearer $CF_TOKEN" \
             "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/pages/projects/$PROJECT_NAME")"
           production_branch="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const j=JSON.parse(s);if(!j.success||!j.result)process.exit(1);console.log(j.result.production_branch||"")})')"
-          if [[ "$production_branch" == "gis-converter-preview" ]]; then
+          if [[ -z "$production_branch" || "$production_branch" == "gis-converter-preview" ]]; then
             echo "::error::Refusing deploy: target branch is configured as the Pages production branch"
             exit 1
           fi
@@ -88,4 +89,4 @@ jobs:
             --project-name "$CF_PAGES_PROJECT" \
             --branch "gis-converter-preview" \
             --commit-hash "$GITHUB_SHA"
-# This workflow does NOT run automatically and does not publish the default Pages production branch.
+# A deliberate request commit can trigger this workflow; normal code pushes cannot deploy. Preview branch only, never Pages production.
