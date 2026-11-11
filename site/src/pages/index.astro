@@ -1,7 +1,8 @@
 ---
-const title = "GIS Converter — Engineering Lab";
+import {routes} from '../lib/gdal-matrix.mjs';
 ---
-<!doctype html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><meta name="robots" content="noindex,nofollow"/><title>{title}</title>
-<style>body{font-family:system-ui,sans-serif;max-width:700px;margin:5rem auto;padding:0 1.5rem;line-height:1.6;color:#17263c}h1{font-size:2rem}a{color:#225cca}.note{border:1px solid #e7c2a2;background:#fff9f1;padding:1rem;border-radius:12px}</style></head>
-<body><h1>GIS Converter · Engineering Lab</h1><p class="note">Private technical staging. No payments, no advertising, no production GIS conversion. Not indexed.</p><p><a href="/internal/gdal-smoke/">Open GDAL/WASM test</a></p></body></html>
+<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><meta name="robots" content="noindex,nofollow"/><title>GIS Converter — Test Build</title>
+<style>body{font-family:system-ui,Arial,sans-serif;color:#192a42;background:#f7f9fc;line-height:1.5;margin:0}.shell{max-width:1000px;margin:auto;padding:32px 20px}header{display:flex;justify-content:space-between;gap:16px;align-items:center}h1{font-size:clamp(27px,4vw,45px)}.notice{padding:16px;border:1px solid #d9b384;border-radius:12px;background:#fff8e8}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:13px;margin:25px 0}.tile{display:block;text-decoration:none;background:white;color:#15243b;padding:20px;border:1px solid #d7e0ec;border-radius:13px}.tile:hover{border-color:#3d6ecc}.tag{font-size:12px;color:#5d6b7a}</style></head>
+<body><div class="shell"><header><strong>GIS Converter / Engineering</strong><small>Not released</small></header><h1>Convert GIS files locally</h1><p class="notice">This is an unreleased GDAL/WASM engineering site. Output data is not yet independently certified. The site is excluded from search engines and must not be used for critical decisions.</p><div class="grid">
+{routes.map(([slug,source,target])=><a class="tile" href={'/converter/'+slug+'/'}><strong>{source.toUpperCase()} → {target.toUpperCase()}</strong><div class="tag">Test browser conversion</div></a>)}
+</div><p>Free conversion · no login · no uploads · no live payment. Planned SaaS features are not active.</p></div></body></html>
