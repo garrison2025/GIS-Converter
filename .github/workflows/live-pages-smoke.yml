@@ -1,0 +1,36 @@
+name: GIS Converter live Cloudflare Pages smoke (no deploy)
+on:
+  push:
+    branches: [dev/p10-integration-ci]
+    paths:
+      - site/scripts/live-pages-qa.mjs
+      - .github/workflows/live-pages-smoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-pages-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install locked test dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Run real public Pages hostname browser tests
+        run: node scripts/live-pages-qa.mjs
+      - name: Save real-live-site result even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-live-pages-qa
+          path: site/live-pages-qa.json
+          if-no-files-found: error
+# No Cloudflare API token or deployment required.

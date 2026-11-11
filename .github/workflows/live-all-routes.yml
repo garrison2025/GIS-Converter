@@ -1,0 +1,33 @@
+name: GIS Converter complete live 19-route browser matrix (no deploy)
+on:
+  push:
+    branches: [dev/p10-integration-ci]
+    paths:
+      - site/scripts/live-all-routes.mjs
+      - .github/workflows/live-all-routes.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify-public-pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium
+      - name: Independently check the output of 19 live browser conversion routes
+        run: node scripts/live-all-routes.mjs
+      - name: Preserve test details on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-cloudflare-live-19-route-report
+          path: site/live-matrix-report.json
+          if-no-files-found: error

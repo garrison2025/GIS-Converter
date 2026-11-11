@@ -49,6 +49,8 @@ jobs:
         run: npm run prepare:pages
       - name: Verify Pages Function in local Wrangler runtime with real GDAL/WASM
         run: npm run smoke:wrangler
+      - name: Verify short Cloudflare build command is configured
+        run: node --input-type=module -e "import pkg from './package.json' with {type:'json'}; if (!pkg.scripts['build:pages']?.includes('prepare:pages')) process.exit(1)"
       - name: Save evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4

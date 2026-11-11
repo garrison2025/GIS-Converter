@@ -1,0 +1,33 @@
+name: GIS Converter live multi-browser conversion QA (no deploy)
+on:
+  push:
+    branches: [dev/p10-integration-ci]
+    paths:
+      - site/scripts/live-crossbrowser-qa.mjs
+      - .github/workflows/live-crossbrowser-qa.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - run: npm ci --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - name: Compare live Cloudflare browser conversions across Chromium Firefox and WebKit
+        run: node scripts/live-crossbrowser-qa.mjs
+      - name: Preserve browser matrix evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-live-browser-matrix
+          path: site/live-crossbrowser-qa.json
+          if-no-files-found: error
