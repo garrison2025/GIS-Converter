@@ -56,8 +56,8 @@ try{
  await page.goto(origin+'/converter/geojson-to-shp/',{waitUntil:'domcontentloaded'});
  await page.locator('#file').setInputFiles({name:'large-polygons.geojson',mimeType:'application/geo+json',buffer:Buffer.from(geojson)});
  const before=await page.metrics(),pid=browser.process()?.pid;
- let peak=0,samples=0;
- const sample=()=>{const rss=browserRSS(pid);if(rss!==null){peak=Math.max(rss,peak);samples++}};
+ let peak=0,memorySamples=0;
+ const sample=()=>{const rss=browserRSS(pid);if(rss!==null){peak=Math.max(rss,peak);memorySamples++}};
  sample();tick=setInterval(sample,220);
  const start=Date.now();
  await page.locator('#submit').click();
@@ -65,7 +65,7 @@ try{
  catch{throw Error('Polygon conversion failed: '+await page.locator('#error').textContent()+' / '+await page.locator('#status').textContent())}
  report.elapsedMs=Date.now()-start;
  clearInterval(tick);tick=null;sample();
- report.memory={chromiumProcessTreePeakRssKiB:peak||null,rssSampleCount:samples,
+ report.memory={chromiumProcessTreePeakRssKiB:peak||null,rssSampleCount:memorySamples,
    jsHeapBeforeBytes:before.JSHeapUsedSize,jsHeapAfterBytes:(await page.metrics()).JSHeapUsedSize,
    caveat:'RSS is summed from Chromium processes on a GitHub CI runner and may double-count shared pages; JSHeapUsedSize excludes WASM linear memory.'};
  const qualityPromise=page.waitForEvent('download');
