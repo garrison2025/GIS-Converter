@@ -1,0 +1,41 @@
+---
+const title='Real GDAL 19-route qualification, not released';
+---
+<!doctype html><html lang="en"><head><meta charset="UTF-8"/><meta name="robots" content="noindex,nofollow"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>{title}</title>
+<script is:inline src="/engine/gdal3/gdal3.js"></script></head><body><h1>{title}</h1><pre id="result">NOT_STARTED</pre>
+<script>
+import {routes,makeFixture,convertGdal,inspectResult} from '../../lib/gdal-matrix.mjs';
+const output=document.querySelector('#result');
+const run=async()=>{
+ const record={status:'RUNNING',tested:[],errors:[],completed:false};
+ window.__matrixResult=record;
+ const write=()=>output.textContent=JSON.stringify(record,null,2);
+ write();
+ try{
+  if(typeof window.initGdalJs!=='function')throw Error('GDAL loader missing');
+  const gdal=await window.initGdalJs({path:'/engine/gdal3',useWorker:false});
+  let shpBytes;
+  try{
+   const shp=await convertGdal(gdal,await makeFixture('kml'),'kml','shp');
+   await inspectResult('shp',shp);shpBytes=shp.bytes;
+  }catch(e){record.errors.push('SHAPEFILE_FIXTURE: '+String(e));}
+  const expanded = new URLSearchParams(location.search).get('all')==='1';
+  const cases=expanded?routes:routes.filter(x=>['kml-to-geojson','kml-to-shp','kmz-to-shp','shp-to-kml','kmz-to-gpx','csv-to-kml'].includes(x[0]));
+  for(const [id,src,dst] of cases){
+   const start=performance.now();
+   try{
+    const input=await makeFixture(src,shpBytes);
+    const result=await convertGdal(gdal,input,src,dst);
+    const info=await inspectResult(dst,result);
+    record.tested.push({id,status:'PASSED',ms:Math.round(performance.now()-start),size:result.bytes.length,info});
+   }catch(e){
+    record.tested.push({id,status:'FAILED',error:e instanceof Error?e.stack:JSON.stringify(e)});
+   }
+   write();
+  }
+  record.status=record.tested.length===cases.length&&record.tested.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
+ }catch(e){record.status='FAILED';record.errors.push(String(e?.stack||e));}
+ finally{record.completed=true;document.body.dataset.done='true';write();}
+};
+run();
+</script></body></html>

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+public/engine/gdal3/
+*.log
+*results.json
+*gdal-report.json

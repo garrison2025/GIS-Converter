@@ -1,0 +1,80 @@
+---
+const title='GDAL quality gate — polygon rings, Unicode and CRS reprojection';
+---
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="robots" content="noindex,nofollow"/><title>{title}</title><script is:inline src="/engine/gdal3/gdal3.js"></script></head><body><h1>{title}</h1><pre id="results">NOT_STARTED</pre>
+<script>
+import {convertGdal,makeFixture} from '../../lib/gdal-matrix.mjs';
+import JSZip from 'jszip';
+const report={status:'RUNNING',cases:[],errors:[]};
+window.__qualityResult=report;
+const render=()=>document.querySelector('#results').textContent=JSON.stringify(report,null,2);
+function assert(cond,label){if(!cond)throw new Error('Assertion failed: '+label)}
+const ringArea=ring=>Math.abs(ring.reduce((s,p,i)=>{const q=ring[(i+1)%ring.length];return s+(p[0]*q[1]-q[0]*p[1]);},0))/2;
+function geometryMetrics(geometry){
+ const polygons=geometry.type==='Polygon'?[geometry.coordinates]:geometry.type==='MultiPolygon'?geometry.coordinates:[];
+ return {polygons:polygons.length,holes:polygons.reduce((s,rings)=>s+rings.length-1,0),area:polygons.reduce((s,rings)=>s+ringArea(rings[0])-rings.slice(1).reduce((a,r)=>a+ringArea(r),0),0)};
+}
+async function mark(label,fn){try{const data=await fn();report.cases.push({name:label,status:'PASSED',...data})}catch(e){report.cases.push({name:label,status:'FAILED',error:String(e instanceof Error?e.stack:JSON.stringify(e))})}render();}
+(async()=>{
+ try{
+ const gdal=await window.initGdalJs({path:'/engine/gdal3',useWorker:false});
+ await mark('polygon holes and multipolygon with UTF-8 labels',async()=>{
+  const geojson={type:'FeatureCollection',features:[
+   {type:'Feature',properties:{Label:'北京公园',Count:2},geometry:{type:'Polygon',coordinates:[
+    [[0,0],[4,0],[4,4],[0,4],[0,0]],
+    [[1,1],[1,2],[2,2],[2,1],[1,1]]
+   ]}},
+   {type:'Feature',properties:{Label:'岛屿群',Count:3},geometry:{type:'MultiPolygon',coordinates:[
+    [[[10,10],[12,10],[12,12],[10,12],[10,10]]],
+    [[[15,10],[16,10],[16,11],[15,11],[15,10]]]
+   ]}}
+  ]};
+  const file=new File([JSON.stringify(geojson)],'polygons.geojson',{type:'application/geo+json'});
+  const exported=await convertGdal(gdal,file,'geojson','shp');
+  const zip=await JSZip.loadAsync(exported.bytes);
+  const names=Object.keys(zip.files);
+  assert(names.some(n=>n.toLowerCase().endsWith('.cpg')),'UTF8 .cpg included');
+  const cpgName=names.find(n=>n.toLowerCase().endsWith('.cpg'));
+  const cpg=await zip.file(cpgName).async('string');
+  assert(cpg.toUpperCase().includes('UTF-8'),'shapefile UTF8 encoding marker');
+  const imported=await convertGdal(gdal,new File([exported.bytes],'from-geojson.zip'),'shp','geojson');
+  const out=JSON.parse(new TextDecoder().decode(imported.bytes));
+  assert(out.type==='FeatureCollection'&&out.features?.length===2,'preserve two features');
+  const labels=out.features.map(f=>f.properties?.Label).sort();
+  assert(labels.includes('北京公园')&&labels.includes('岛屿群'),'Chinese labels roundtrip');
+  const metrics=out.features.map(f=>geometryMetrics(f.geometry));
+  const polygons=metrics.reduce((s,f)=>s+f.polygons,0),holes=metrics.reduce((s,f)=>s+f.holes,0),area=metrics.reduce((s,f)=>s+f.area,0);
+  assert(polygons===3,'three polygon parts preserved');
+  assert(holes===1,'one polygon hole preserved');
+  assert(Math.abs(area-20)<.001,'planar area preserved, 20 square-degrees in test');
+  return {features:out.features.length,polygons,holes,area,labels,cpg};
+ });
+ await mark('EPSG:3857 SHP with reprojection back to WGS84',async()=>{
+   const input=await makeFixture('geojson');
+   const opened=await gdal.open(input);
+   const ds=opened.datasets?.[0];assert(ds,'open GeoJSON point');
+   const packed=new JSZip();
+   try{
+     const exported=await gdal.ogr2ogr(ds,['-f','ESRI Shapefile','-t_srs','EPSG:3857','-lco','ENCODING=UTF-8'],'test_3857');
+     const files=Array.isArray(exported?.all)?exported.all:[exported];
+     for(const file of files){
+       const name=String(file?.local||file).split('/').pop();
+       const b=await gdal.getFileBytes(file);
+       if(b?.length)packed.file(name,b);
+     }
+   } finally{try{gdal.close(ds)}catch{}}
+   const names=Object.keys(packed.files);
+   assert(names.some(n=>n.endsWith('.prj')),'projected shapefile .prj exists');
+   const bytes=new Uint8Array(await packed.generateAsync({type:'uint8array'}));
+   const result=await convertGdal(gdal,new File([bytes],'projected.zip'),'shp','geojson');
+   const geo=JSON.parse(new TextDecoder().decode(result.bytes));
+   const point=geo.features?.[0]?.geometry;
+   assert(point?.type==='Point','point geometry');
+   assert(Math.abs(point.coordinates[0]-116.4)<.0001&&Math.abs(point.coordinates[1]-39.9)<.0001,'3857 to 4326 coordinate accuracy');
+   return {sourceProjection:'EPSG:3857',targetProjection:'EPSG:4326',coordinates:point.coordinates,files:names};
+ });
+ report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
+ }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
+ finally{report.complete=true;document.body.dataset.done='true';render()}
+})();
+</script></body></html>

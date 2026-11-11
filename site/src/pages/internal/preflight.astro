@@ -1,0 +1,116 @@
+---
+const title='Preflight security regression gate';
+---
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="robots" content="noindex,nofollow"/><title>{title}</title></head>
+<body><pre id="results">RUNNING</pre><script>
+import JSZip from 'jszip';
+import {preflightGISInput} from '../../lib/input-preflight.mjs';
+const report={status:'RUNNING',cases:[]};
+window.__preflightResult=report;
+async function test(label,fn){
+ try{const d=await fn();report.cases.push({label,passed:true,...(d||{})})}
+ catch(e){report.cases.push({label,passed:false,error:String(e instanceof Error?e.stack:JSON.stringify(e))})}
+}
+async function rejects(file,source,fragment){
+ let msg='';
+ try{await preflightGISInput(file,source)}
+ catch(e){msg=String(e.message)}
+ if(!msg.toLowerCase().includes(fragment.toLowerCase()))throw Error('Expected rejection '+fragment+', got '+msg);
+ return {reason:msg};
+}
+async function makeZip(name,files,compression='DEFLATE'){
+ const zip=new JSZip();
+ for(const [n,v] of Object.entries(files))zip.file(n,v);
+ return new File([await zip.generateAsync({type:'uint8array',compression,compressionOptions:{level:9}})],name,{type:'application/zip'});
+}
+function corruptCentral(file,patch){
+ return file.arrayBuffer().then(ab=>{
+  const u8=new Uint8Array(ab),dv=new DataView(ab);
+  let ptr=-1;
+  for(let i=0;i+4<u8.length;i++)if(dv.getUint32(i,true)===0x02014b50){ptr=i;break}
+  if(ptr<0)throw Error('Missing central signature in fixture');
+  patch({u8,dv,ptr});
+  return new File([u8],file.name,{type:'application/zip'});
+ });
+}
+const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+(async()=>{
+ await test('valid KMZ (root KML)',async()=>{
+  const f=await makeZip('good.kmz',{'doc.kml':kml,'files/style.png':new Uint8Array([1,2,3])});
+  const v=await preflightGISInput(f,'kmz');
+  if(v.entries!==2)throw Error('Entry count wrong');return v;
+ });
+ await test('valid SHP ZIP (component presence and CRS)',async()=>{
+  const f=await makeZip('site.zip',{'map.shp':'fake','map.shx':'fake','map.dbf':'fake','map.prj':'WGS84','map.cpg':'UTF-8'});
+  const v=await preflightGISInput(f,'shp');if(v.entries!==5)throw Error('Count wrong');return v;
+ });
+ await test('valid UTF-8 named KMZ extra file',async()=>{
+  const f=await makeZip('unicode.kmz',{'doc.kml':kml,'files/图标.png':'PNG'});
+  return await preflightGISInput(f,'kmz');
+ });
+ await test('unsupported extension',()=>rejects(new File([kml],'bad.gpx'),'kml','extension'));
+ await test('reject forged ZIP',()=>rejects(new File(['hello'],'bad.kmz'),'kmz','invalid ZIP'));
+ await test('SHP without PRJ explicitly rejected',async()=>{
+  const f=await makeZip('missing.zip',{'x.shp':'a','x.shx':'b','x.dbf':'c'});
+  return rejects(f,'shp','.prj');
+ });
+ await test('SHP duplicate case-insensitive paths rejected',async()=>{
+  const f=await makeZip('dup.zip',{'x.shp':'a','X.SHP':'b','x.shx':'b','x.dbf':'c','x.prj':'d'});
+  return rejects(f,'shp','duplicate');
+ });
+ await test('KMZ with two KML documents rejected',async()=>{
+  const f=await makeZip('mixed.kmz',{'doc.kml':kml,'extra.kml':kml});
+  return rejects(f,'kmz','exactly one');
+ });
+ await test('reject traversal in central directory',async()=>{
+  const f=await makeZip('traverse.kmz',{'zz/xx.kml':kml});
+  const bad=await corruptCentral(f,({u8,ptr})=>{
+   const name='../xx.kml';for(let i=0;i<name.length;i++)u8[ptr+46+i]=name.charCodeAt(i);
+  });
+  return rejects(bad,'kmz','unsafe archive path');
+ });
+ await test('reject encrypted ZIP flag',async()=>{
+  const f=await makeZip('encrypted.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>dv.setUint16(ptr+8,dv.getUint16(ptr+8,true)|1,true));
+  return rejects(bad,'kmz','encrypted');
+ });
+ await test('reject ZIP64 sentinel',async()=>{
+  const f=await makeZip('zip64.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>dv.setUint32(ptr+24,0xffffffff,true));
+  return rejects(bad,'kmz','ZIP64');
+ });
+ await test('reject high compression ratio ZIP bomb',async()=>{
+  const f=await makeZip('bomb.kmz',{'doc.kml':'A'.repeat(100000)});
+  return rejects(f,'kmz','expansion ratio');
+ });
+ await test('reject expanded >32MiB entry',async()=>{
+  const f=await makeZip('large.kmz',{'doc.kml':kml},'STORE');
+  const bad=await corruptCentral(f,({dv,ptr})=>dv.setUint32(ptr+24,35*1024*1024,true));
+  return rejects(bad,'kmz','expanded-size');
+ });
+ await test('reject unsupported compression method',async()=>{
+  const f=await makeZip('odd.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>dv.setUint16(ptr+10,99,true));
+  return rejects(bad,'kmz','compression method');
+ });
+ await test('reject XML DTD',()=>rejects(new File(['<?xml version="1.0"?><!DOCTYPE x [<!ENTITY y "test">]><kml></kml>'],'x.kml'),'kml','DTD'));
+ await test('reject NUL text file',()=>rejects(new File([new Uint8Array([65,0,66])],'x.csv'),'csv','NUL'));
+ await test('reject over 15 MiB',()=>rejects(new File([new Uint8Array(15*1024*1024+1)],'oversize.kml'),'kml','15 MiB'));
+ await test('reject many ZIP entries',async()=>{
+  const files={'doc.kml':kml};for(let i=0;i<129;i++)files['images/'+i+'.png']='p';
+  return rejects(await makeZip('many.kmz',files),'kmz','too many ZIP');
+ });
+ await test('reject multiple-disk metadata',async()=>{
+  const f=await makeZip('disk.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,u8})=>{
+   let ptr=-1;for(let i=u8.length-22;i>=0;i--)if(dv.getUint32(i,true)===0x06054b50){ptr=i;break}
+   if(ptr<0)throw Error('EOCD not found');
+   dv.setUint16(ptr+4,1,true);
+  });
+  return rejects(bad,'kmz','multi-disk');
+ });
+ report.status=report.cases.every(c=>c.passed)?'PASSED':'FAILED';
+ report.complete=true;document.body.dataset.done='true';
+ document.querySelector('#results').textContent=JSON.stringify(report,null,2);
+})();
+</script></body></html>

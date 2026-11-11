@@ -1,0 +1,72 @@
+---
+const title='Cancellation lifecycle regression gate';
+---
+<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="robots" content="noindex,nofollow"/><title>{title}</title></head>
+<body><pre id="report">RUNNING</pre><script>
+import {runIsolatedConversion} from '../../lib/isolated-task.mjs';
+const report={status:'RUNNING',cases:[]};window.__lifecycleResult=report;
+const fakeFile=new File(['data'],'fake.kml');
+const require=(value,message)=>{if(!value)throw Error(message)};
+async function test(name,run){try{const data=await run();report.cases.push({name,passed:true,...(data||{})})}catch(e){report.cases.push({name,passed:false,error:String(e?.stack||e)})}}
+const fakeWorker=(behavior='hang')=>{
+ const value={terminated:0,onmessage:null,onerror:null,onmessageerror:null};
+ value.postMessage=msg=>{
+  if(behavior==='throws')throw Error('test worker blocked postMessage');
+  if(behavior==='success')queueMicrotask(()=>value.onmessage?.({data:{type:'success',id:msg.id,name:'result.geojson',mime:'application/geo+json',bytes:new Uint8Array([1,2,3])}}));
+ };
+ value.terminate=()=>value.terminated++;
+ return value;
+};
+(async()=>{
+ await test('cancel terminates task exactly once and rejects promise',async()=>{
+  const w=fakeWorker();
+  const t=runIsolatedConversion({file:fakeFile,source:'kml',target:'geojson',timeoutMs:3000,workerFactory:()=>w});
+  require(t.cancel()===true,'first cancel must succeed');
+  require(t.cancel()===false,'duplicate cancel must be ignored');
+  let code;try{await t.promise}catch(e){code=e.code}
+  require(code==='CANCELLED','cancelled promise code');
+  require(w.terminated===1,'worker not terminated exactly once');
+  require(t.state==='cancelled','state mismatch');
+  return {terminated:w.terminated,code};
+ });
+ await test('timeout terminates hung task and allows retry',async()=>{
+  const w=fakeWorker();
+  const t=runIsolatedConversion({file:fakeFile,source:'kml',target:'geojson',timeoutMs:25,workerFactory:()=>w});
+  let code;try{await t.promise}catch(e){code=e.code}
+  require(code==='TIMEOUT','timeout missing');
+  require(w.terminated===1,'timeout did not terminate worker');
+  const w2=fakeWorker('success');
+  const t2=runIsolatedConversion({file:fakeFile,source:'kml',target:'geojson',timeoutMs:1000,workerFactory:()=>w2});
+  const output=await t2.promise;
+  require(output.name==='result.geojson'&&w2.terminated===1,'retry did not succeed');
+  return {timeoutCode:code,retry:'PASSED'};
+ });
+ await test('worker postMessage failure rejects and cleans up',async()=>{
+  const w=fakeWorker('throws');
+  const t=runIsolatedConversion({file:fakeFile,source:'kml',target:'geojson',timeoutMs:1000,workerFactory:()=>w});
+  let code;try{await t.promise}catch(e){code=e.code}
+  require(code==='ERROR'&&w.terminated===1,'synchronous worker failure not cleaned up');
+  return {code,terminated:w.terminated};
+ });
+ await test('late results cannot turn cancelled task into success',async()=>{
+  const w=fakeWorker();
+  const t=runIsolatedConversion({file:fakeFile,source:'kml',target:'geojson',timeoutMs:1000,workerFactory:()=>w});
+  const handler=w.onmessage;
+  t.cancel();
+  handler?.({data:{id:'conversion',type:'success',bytes:new Uint8Array([7]),name:'late.geojson'}});
+  let code;try{await t.promise}catch(e){code=e.code}
+  require(code==='CANCELLED'&&t.state==='cancelled'&&w.terminated===1,'late result affected cancelled task');
+  return {code};
+ });
+ await test('successful task terminates worker',async()=>{
+  const w=fakeWorker('success');
+  const t=runIsolatedConversion({file:fakeFile,source:'kml',target:'geojson',timeoutMs:1000,workerFactory:()=>w});
+  const output=await t.promise;
+  require(t.state==='success'&&w.terminated===1&&output.bytes.length===3,'success cleanup failed');
+  return {terminated:w.terminated};
+ });
+ report.status=report.cases.every(t=>t.passed)?'PASSED':'FAILED';
+ report.complete=true;document.body.dataset.done='true';
+ document.querySelector('#report').textContent=JSON.stringify(report,null,2);
+})();
+</script></body></html>

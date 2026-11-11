@@ -1,0 +1,97 @@
+name: GIS Converter — manually approved Cloudflare Pages preview
+on:
+  push:
+    branches: [dev/p10-integration-ci]
+    paths:
+      - site/.preview-request
+  workflow_dispatch:
+    inputs:
+      cloudflare_pages_project:
+        description: "Existing Cloudflare Pages project name (preview only)"
+        required: true
+        type: string
+      confirm:
+        description: "Enter PREVIEW_ONLY; never a production domain"
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  preview:
+    if: >-
+      github.ref == 'refs/heads/dev/p10-integration-ci' &&
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.confirm == 'PREVIEW_ONLY') ||
+        (github.event_name == 'push' && github.event.head_commit.message == 'manual: gis preview')
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: gis-converter-preview
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Verify cloud deployment is deliberately configured
+        env:
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DISPATCH_PROJECT: ${{ inputs.cloudflare_pages_project }}
+        shell: bash
+        run: |
+          test -n "$CF_ACCOUNT" || { echo "::error::Missing Cloudflare account ID secret"; exit 1; }
+          test -n "$CF_TOKEN" || { echo "::error::Missing Cloudflare Pages scoped API token secret"; exit 1; }
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            PROJECT_NAME="$(cat .preview-request)"
+          else
+            PROJECT_NAME="$DISPATCH_PROJECT"
+          fi
+          [[ "$PROJECT_NAME" =~ ^gis-converter-[a-z0-9-]{2,55}$ ]] || { echo "::error::Project name must start gis-converter-"; exit 1; }
+          echo "CF_PAGES_PROJECT=$PROJECT_NAME" >> "$GITHUB_ENV"
+          # Fail closed when someone configures this preview branch as the Pages production branch.
+          response="$(curl -fsS --retry 2 --header "Authorization: Bearer $CF_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CF_ACCOUNT/pages/projects/$PROJECT_NAME")"
+          production_branch="$(printf '%s' "$response" | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>{const j=JSON.parse(s);if(!j.success||!j.result)process.exit(1);console.log(j.result.production_branch||"")})')"
+          if [[ -z "$production_branch" || "$production_branch" == "gis-converter-preview" ]]; then
+            echo "::error::Refusing deploy: target branch is configured as the Pages production branch"
+            exit 1
+          fi
+      - name: Install exact dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Prepare GDAL runtime
+        run: |
+          npm run stage:gdal
+          npm run pack:gdal
+          npm run build
+      - name: Browser qualification
+        run: |
+          npx playwright install --with-deps chromium
+          npm run smoke:matrix
+          npm run smoke:gis-quality
+          npm run smoke:ui
+          npm run smoke:cancel
+          npm run smoke:input-security
+      - name: Stage static Pages package without oversized WASM
+        run: npm run prepare:pages
+      - name: Verify noindex and static publication safeguards
+        shell: bash
+        run: |
+          test -f dist/robots.txt
+          grep -q 'Disallow: /' dist/robots.txt
+          test -f dist/_headers
+          grep -q 'X-Robots-Tag: noindex' dist/_headers
+          test ! -f dist/engine/gdal3/gdal3WebAssembly.wasm
+          test -f dist/engine/gdal3/gdal3WebAssembly.wasm.gz
+      - name: Deploy only to a preview branch of the existing Pages project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          ./node_modules/.bin/wrangler pages deploy dist \
+            --project-name "$CF_PAGES_PROJECT" \
+            --branch "gis-converter-preview" \
+            --commit-hash "$GITHUB_SHA"
+# A deliberate request commit can trigger this workflow; normal code pushes cannot deploy. Preview branch only, never Pages production.
