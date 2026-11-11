@@ -12,7 +12,9 @@
     "stage:gdal": "node scripts/stage-gdal.mjs",
     "pack:gdal": "node scripts/pack-gdal.mjs",
     "smoke:browser": "node scripts/browser-smoke.mjs",
-    "smoke:matrix": "node scripts/matrix-smoke.mjs"
+    "smoke:matrix": "node scripts/matrix-smoke.mjs",
+    "smoke:ui": "node scripts/tool-ui-smoke.mjs",
+    "smoke:compressed": "node scripts/compressed-gdal-smoke.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",

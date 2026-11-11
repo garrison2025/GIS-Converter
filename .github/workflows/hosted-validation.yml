@@ -31,6 +31,10 @@ jobs:
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
         run: npm run smoke:matrix
+      - name: Validate 19 Astro tool links and three real UI downloads
+        run: npm run smoke:ui
+      - name: Real browser GDAL test using only gzip-encoded WASM response
+        run: npm run smoke:compressed
       - name: Save evidence even on failure
         if: always()
         uses: actions/upload-artifact@v4
@@ -41,6 +45,8 @@ jobs:
             site/gdal-runtime-report.json
             site/gdal-gzip-report.json
             site/gdal-route-matrix.json
+            site/astro-tool-ui-result.json
+            site/compressed-gdal-browser-result.json
             site/package-lock.json
           if-no-files-found: warn
   billing-ledger-offline:
