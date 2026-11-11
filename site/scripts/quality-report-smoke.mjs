@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import JSZip from 'jszip';
-import {createGISQualityReport,inspectGISData} from '../src/lib/quality-report.mjs';
+import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 let passed=0;const records=[];
 const makeFile=(text,name='input.geojson')=>new File([text],name);
 const buf=val=>new Uint8Array(Buffer.from(val));
@@ -123,6 +123,23 @@ await test('Unsafe JSON does not leak source features into quality report',async
  const r=await createGISQualityReport(makeFile(geo),'geojson',buf(geo),'geojson');
  assert(!JSON.stringify(r).includes('private-person-name'));
  assert.equal(r.disclaimer.includes('NOT data certification'),true);
+});
+await test('Critical output feature loss blocks delivery',async()=>{
+ const report=await createGISQualityReport(makeFile(JSON.stringify({type:'FeatureCollection',features:[
+  {type:'Feature',properties:{},geometry:{type:'Point',coordinates:[116.4,39.9]}},
+  {type:'Feature',properties:{},geometry:{type:'Point',coordinates:[116.5,39.8]}}
+ ]})),'geojson',buf(fixture()),'geojson');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+});
+await test('Critical point coordinate drift blocks delivery',async()=>{
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',buf(fixture([116.41,39.9])),'geojson');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+});
+await test('Unknown projection and unsupported checks remain warnings, not a block',async()=>{
+ const original=JSON.parse(fixture());original.crs={type:'name',properties:{name:'EPSG:3857'}};
+ const report=await createGISQualityReport(makeFile(JSON.stringify(original)),'geojson',buf(fixture()),'geojson');
+ assert.equal(report.checks.find(c=>c.id==='coordinate-bounds').status,'unavailable');
+ assert.equal(assertNoDetectedCriticalDataLoss(report),true);
 });
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));

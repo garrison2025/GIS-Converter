@@ -109,6 +109,39 @@ const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Pla
   });
   return rejects(bad,'kmz','multi-disk');
  });
+
+ const mixed={type:'FeatureCollection',features:[
+  {type:'Feature',properties:{},geometry:{type:'Point',coordinates:[116.4,39.9]}},
+  {type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[[[116,39],[117,39],[117,40],[116,39]]]}}
+ ]};
+ await test('preflight rejects mixed geometry families for SHP output',async()=>{
+  const f=new File([JSON.stringify(mixed)],'mixed.geojson');
+  let msg='';
+  try{await preflightGISInput(f,'geojson','shp')}catch(e){msg=String(e.message)}
+  if(!msg.includes('mixed geometry families'))throw Error('Expected mixed-geometry rejection, got '+msg);
+  return {reason:msg};
+ });
+ await test('preflight accepts polygon and multipolygon family for SHP',async()=>{
+  const geo={type:'FeatureCollection',features:[
+   {type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[[[0,0],[1,0],[1,1],[0,0]]] }},
+   {type:'Feature',properties:{},geometry:{type:'MultiPolygon',coordinates:[[[[2,2],[3,2],[3,3],[2,2]]]]}}
+  ]};
+  const v=await preflightGISInput(new File([JSON.stringify(geo)],'poly.geojson'),'geojson','shp');
+  if(v.kind!=='text')throw Error('Unexpected preflight result');
+  return v;
+ });
+ await test('preflight rejects null geometry when exporting SHP',async()=>{
+  const f=new File([JSON.stringify({type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:null}]})],'null.geojson');
+  let msg='';try{await preflightGISInput(f,'geojson','shp')}catch(e){msg=String(e.message)}
+  if(!msg.includes('null, unsupported'))throw Error('Null geometry not rejected: '+msg);
+  return {reason:msg};
+ });
+ await test('preflight rejects broken GeoJSON before loading GDAL',async()=>{
+  let msg='';try{await preflightGISInput(new File(['{ broken'],'broken.geojson'),'geojson','shp')}catch(e){msg=String(e.message)}
+  if(!msg.includes('not valid JSON'))throw Error('Malformed GeoJSON not rejected: '+msg);
+  return {reason:msg};
+ });
+
  report.status=report.cases.every(c=>c.passed)?'PASSED':'FAILED';
  report.complete=true;document.body.dataset.done='true';
  document.querySelector('#results').textContent=JSON.stringify(report,null,2);
