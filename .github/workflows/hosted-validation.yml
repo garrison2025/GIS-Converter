@@ -37,6 +37,8 @@ jobs:
         run: npm run smoke:gis-quality
       - name: Validate 19 Astro tool links and three real UI downloads
         run: npm run smoke:ui
+      - name: Verify hard cancel, timeout, retry and worker termination
+        run: npm run smoke:cancel
       - name: Real browser GDAL test using only gzip-encoded WASM response
         run: npm run smoke:compressed
       - name: Prepare Pages package (strip raw oversized WASM)
@@ -56,6 +58,7 @@ jobs:
             site/gdal-route-matrix.json
             site/astro-tool-ui-result.json
             site/gis-quality-results.json
+            site/task-lifecycle-result.json
             site/compressed-gdal-browser-result.json
             site/pages-preview-package-report.json
             site/wrangler-pages-result.json
