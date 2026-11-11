@@ -41,6 +41,8 @@ jobs:
         run: npm run smoke:gis-quality
       - name: Stress-test 12000 GIS features and independently inspect SHP records
         run: npm run smoke:gis-stress
+      - name: Stress-test 3000 polygons with holes, UTF-8 DBF, field truncation, and Chromium RSS sampling
+        run: npm run smoke:polygon-stress
       - name: Validate 19 Astro tool links and three real UI downloads
         run: npm run smoke:ui
       - name: Verify 19 routes through real isolated Worker upload and download
@@ -71,6 +73,7 @@ jobs:
             site/live-matrix-report.json
             site/all-ui-gate-error.txt
             site/gis-stress-results.json
+            site/gis-polygon-stress.json
             site/task-lifecycle-result.json
             site/input-preflight-results.json
             site/compressed-gdal-browser-result.json
