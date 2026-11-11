@@ -19,7 +19,8 @@
     "smoke:wrangler": "node scripts/wrangler-pages-smoke.mjs",
     "smoke:gis-quality": "node scripts/quality-smoke.mjs",
     "smoke:cancel": "node scripts/task-lifecycle-smoke.mjs",
-    "smoke:input-security": "node scripts/input-preflight-smoke.mjs"
+    "smoke:input-security": "node scripts/input-preflight-smoke.mjs",
+    "smoke:gis-stress": "node scripts/multi-feature-stress.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",

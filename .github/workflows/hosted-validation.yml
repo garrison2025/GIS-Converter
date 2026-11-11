@@ -37,6 +37,8 @@ jobs:
         run: npm run smoke:matrix
       - name: Verify polygon topology Unicode encoding and EPSG reprojection
         run: npm run smoke:gis-quality
+      - name: Stress-test 12000 GIS features and independently inspect SHP records
+        run: npm run smoke:gis-stress
       - name: Validate 19 Astro tool links and three real UI downloads
         run: npm run smoke:ui
       - name: Verify hard cancel, timeout, retry and worker termination
@@ -60,6 +62,7 @@ jobs:
             site/gdal-route-matrix.json
             site/astro-tool-ui-result.json
             site/gis-quality-results.json
+            site/gis-stress-results.json
             site/task-lifecycle-result.json
             site/input-preflight-results.json
             site/compressed-gdal-browser-result.json
