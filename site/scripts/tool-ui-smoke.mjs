@@ -19,6 +19,19 @@ try{
  await page.goto(root+'/');
  report.pages=await page.locator('a[href^="/converter/"]').count();
  if(report.pages!==19)throw Error('Expected 19 tool links, found '+report.pages);
+
+ const search=page.locator('#filter');
+ if(await search.count()!==1)throw Error('Homepage tool filter missing');
+ await search.fill('kmz-to-shp');
+ if(await page.locator('a.tool:visible').count()!==1)throw Error('Search filter did not isolate KMZ to SHP');
+ await search.fill('');
+ if(await page.locator('a.tool:visible').count()!==19)throw Error('Clearing filter did not restore 19 tools');
+ await page.setViewportSize({width:390,height:844});
+ const homepageWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
+ if(homepageWidth>392)throw Error('Mobile homepage overflows: '+homepageWidth);
+ report.homepage={filter:'PASSED',mobileWidth:homepageWidth};
+ await page.setViewportSize({width:1280,height:800});
+
  const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>UI Test</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
  const csv='longitude,latitude,Name\n116.4,39.9,UI Test\n';
  const kmzZip=new JSZip();kmzZip.file('doc.kml',kml);
@@ -31,6 +44,7 @@ try{
    await page.goto(root+'/converter/'+t.slug+'/');
    if(await page.locator('meta[name="robots"]').getAttribute('content')!=='noindex,nofollow')throw Error('Unreleased page not noindexed');
    await page.locator('#file').setInputFiles({name:t.name,mimeType:t.mime,buffer:t.bytes});
+   if(!(await page.locator('#file-info').textContent()).includes('MiB selected'))throw Error('File selection summary missing on '+t.slug);
    await page.locator('#submit').click();
    try{await page.locator('#result').waitFor({state:'visible',timeout:60000})}
    catch(e){throw Error(t.slug+' failed: '+await page.locator('#error').textContent())}
