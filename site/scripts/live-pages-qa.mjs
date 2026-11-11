@@ -94,6 +94,23 @@ try{
  const shp=await JSZip.loadAsync(shpBytes);
  for(const ext of ['.shp','.shx','.dbf','.prj'])assert(Object.keys(shp.files).some(n=>n.toLowerCase().endsWith(ext)),'SHP output missing '+ext);
  report.tests.at(-1).files=Object.keys(shp.files);
+
+ // Guard test on the actual public Cloudflare Pages URL (no dummy GDAL mocks).
+ const mixed={type:'FeatureCollection',features:[
+  {type:'Feature',properties:{},geometry:{type:'Point',coordinates:[116.4,39.9]}},
+  {type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[[[116,39],[117,39],[117,40],[116,39]]]}}
+ ]};
+ await page.goto(origin+'/converter/geojson-to-shp/',{waitUntil:'domcontentloaded'});
+ await page.locator('#file').setInputFiles({
+   name:'unsupported-mixed.geojson',mimeType:'application/geo+json',buffer:Buffer.from(JSON.stringify(mixed))
+ });
+ await page.locator('#submit').click();
+ await page.waitForFunction(()=>document.querySelector('#error')?.hidden===false,{timeout:30000});
+ const rejection=await page.locator('#error').textContent();
+ assert(rejection.includes('mixed geometry families'),'Live SHP guard missing or wrong: '+rejection);
+ assert(await page.locator('#result').isHidden(),'Bad mixed-geometry file was exposed for download');
+ report.mixedGeometryGuard={status:'PASSED',error:rejection};
+
  // Basic mobile responsiveness (navigation and file upload UI)
  await page.setViewportSize({width:390,height:844});
  await page.goto(origin+'/converter/kml-to-geojson/',{waitUntil:'domcontentloaded'});
