@@ -133,6 +133,20 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
    return {outcome:'preserved',features:parsed.features.length};
  });
 
+
+ await mark('GPX waypoint and track layers must be present in KML export',async()=>{
+   const xml='<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="GIS-QA" xmlns="http://www.topografix.com/GPX/1/1"><wpt lat="39.9" lon="116.4"><name>QA Waypoint</name></wpt><trk><name>QA Track</name><trkseg><trkpt lat="39.8" lon="116.3"/><trkpt lat="39.85" lon="116.35"/></trkseg></trk></gpx>';
+   const file=new File([xml],'multi-layer.gpx');
+   let output;
+   try{output=await convertGdal(gdal,file,'gpx','kml')}
+   catch(e){return {outcome:'conversion-refused',reason:String(e?.message||e)}}
+   const kml=new TextDecoder().decode(output.bytes);
+   assert(kml.includes('QA Waypoint'),'GPX waypoint silently omitted');
+   assert(kml.includes('QA Track'),'GPX track silently omitted');
+   assert(/<LineString>/.test(kml),'GPX track did not become a line');
+   return {outcome:'preserved',hasWaypoint:true,hasTrack:true,size:output.bytes.length};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
