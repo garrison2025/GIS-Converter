@@ -18,6 +18,35 @@ function walkCoords(data,box){
  for(const child of data)result=walkCoords(child,box)&&result;
  return result;
 }
+/**
+ * A source-attribute risk estimate, not an attribute equality check.
+ * Only aggregate counts go into the downloadable report; field names and values do not.
+ */
+function scanGeojsonFieldRisk(features){
+ const names=new Set(), limit=512;
+ let nestedValues=0, overflow=false;
+ for(const f of features){
+  const props=f?.properties;
+  if(!props || typeof props!=='object' || Array.isArray(props))continue;
+  for(const [name,value] of Object.entries(props)){
+   if(names.size<limit)names.add(name);
+   else if(!names.has(name))overflow=true;
+   if(value!==null && typeof value==='object')nestedValues++;
+  }
+ }
+ const encoder=new TextEncoder();
+ const prefixes=new Set();
+ let longNames=0,collisions=0;
+ for(const name of names){
+  const bytes=encoder.encode(name);
+  if(bytes.length>10)longNames++;
+  const prefix=Array.from(bytes.slice(0,10)).join(',');
+  if(prefixes.has(prefix))collisions++;else prefixes.add(prefix);
+ }
+ return {fieldNamesInspected:names.size,longNames,firstTenByteCollisions:collisions,
+   nonScalarValues:nestedValues,schemaScanLimited:overflow};
+}
+
 function parseGeojson(bytes){
  const meta=blank('geojson');
  let data;
@@ -34,6 +63,7 @@ function parseGeojson(bytes){
   if(type==='unknown'||!walkCoords(geometry.coordinates,box))valid=false;
  }
  meta.features=data.features.length;meta.geometry=[...kinds];meta.bbox=endBox(box);
+ meta.fieldRisk=scanGeojsonFieldRisk(data.features);
  meta.pointOnly=valid&&pointsOnly;meta.complete=valid;
  const declared=String(data.crs?.properties?.name||'').trim().toUpperCase();
  const known=new Set(['CRS84','OGC:CRS84','URN:OGC:DEF:CRS:OGC:1.3:CRS84','EPSG:4326','URN:OGC:DEF:CRS:EPSG::4326','URN:OGC:DEF:CRS:EPSG:6.6:4326']);
@@ -205,6 +235,18 @@ export async function createGISQualityReport(input,source,output,target){
  }else add('coordinate-bounds','unavailable','Coordinate comparison requires compatible WGS84 point geometries');
  if(before.issues.length)add('input-inspection','review',before.issues.join('; '));
  else add('input-inspection',before.complete?'pass':'unavailable',before.complete?'Input structure inspected for supported feature types':'Input inspection was incomplete');
+ if(source==='geojson'&&target==='shp'&&before.fieldRisk){
+  const r=before.fieldRisk;
+  const flagged=r.longNames||r.firstTenByteCollisions||r.nonScalarValues||r.schemaScanLimited;
+  add('shp-field-limits',flagged?'review':'pass',
+    flagged
+      ? 'Shapefile DBF schema risk: '+r.longNames+' field names exceed 10 UTF-8 bytes, '+
+        r.firstTenByteCollisions+' duplicate 10-byte prefixes, '+r.nonScalarValues+
+        ' nested/list values'+(r.schemaScanLimited?'; field scan limited':'')+
+        '. Shortening, renaming or coercion can occur. Confirm fields in GIS software.'
+      : 'No field-name length, 10-byte prefix collision or non-scalar type risk found in inspected input; field values are not certified.'
+  );
+ }
  add('attribute-fidelity','unavailable','Field types, names, values, styles and metadata are not independently verified');
  const status=checks.some(c=>c.status==='review')?'review':checks.some(c=>c.status==='unavailable')?'partial':'checked';
  return {schemaVersion:1,kind:'local-structural-quality-report',status,source,target,input:before,output:after,checks,disclaimer:'Automated structural comparison only; NOT data certification. Complex geometries, attributes, projections and rendering require independent GIS review.'};

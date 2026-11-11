@@ -141,6 +141,29 @@ await test('Unknown projection and unsupported checks remain warnings, not a blo
  assert.equal(report.checks.find(c=>c.id==='coordinate-bounds').status,'unavailable');
  assert.equal(assertNoDetectedCriticalDataLoss(report),true);
 });
+await test('Shapefile long field names and collisions are flagged without leaking keys',async()=>{
+ const geo=JSON.stringify({type:'FeatureCollection',features:[{type:'Feature',
+  properties:{LongFieldNameOne:'private 1',LongFieldNameTwo:'private 2',Data:[1,2]},
+  geometry:{type:'Point',coordinates:[116.4,39.9]}}]});
+ const r=await createGISQualityReport(makeFile(geo),'geojson',buf(geo),'shp');
+ const risk=r.checks.find(x=>x.id==='shp-field-limits');
+ assert.equal(risk.status,'review');
+ assert(risk.detail.includes('field names exceed 10'));
+ assert(!JSON.stringify(r).includes('LongFieldNameOne'));
+ assert(!JSON.stringify(r).includes('private 1'));
+});
+await test('Safe short scalar properties do not trigger Shapefile name warning',async()=>{
+ const geo=fixture([116.4,39.9],{Seq:7,Label:'ok'});
+ const r=await createGISQualityReport(makeFile(geo),'geojson',buf(geo),'shp');
+ assert.equal(r.checks.find(x=>x.id==='shp-field-limits').status,'pass');
+ assert.equal(r.checks.find(x=>x.id==='attribute-fidelity').status,'unavailable');
+});
+await test('Field risk analysis does not pretend to certify attribute values',async()=>{
+ const geo=fixture([116.4,39.9],{Seq:1});
+ const r=await createGISQualityReport(makeFile(geo),'geojson',buf(fixture([116.4,39.9],{Seq:999})),'shp');
+ assert.equal(r.checks.find(x=>x.id==='shp-field-limits').status,'pass');
+ assert.equal(r.checks.find(x=>x.id==='attribute-fidelity').status,'unavailable');
+});
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
