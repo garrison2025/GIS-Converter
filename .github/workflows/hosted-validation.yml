@@ -1,0 +1,40 @@
+name: GIS Converter hosted build and GDAL test (no deploy)
+on:
+  push:
+    branches: [dev/p10-integration-ci]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  astro-and-gdal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install exact project dependencies
+        run: npm install --no-audit --no-fund
+      - name: Stage real GDAL/WASM and record SHA256 and sizes
+        run: npm run stage:gdal
+      - name: Compile actual Astro project
+        run: npm run build
+      - name: Install Chromium for real browser test
+        run: npx playwright install --with-deps chromium
+      - name: Run real GDAL conversion and independent GeoJSON check
+        run: npm run smoke:browser
+      - name: Save evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-hosted-validation-evidence
+          path: |
+            site/gdal-browser-result.json
+            site/gdal-runtime-report.json
+            site/package-lock.json
+          if-no-files-found: warn
+# No deployment, secrets, live billing, or production indexing.

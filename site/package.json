@@ -1,0 +1,22 @@
+{
+  "name": "gis-converter-ci-lab",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "build": "astro build",
+    "dev": "astro dev",
+    "stage:gdal": "node scripts/stage-gdal.mjs",
+    "smoke:browser": "node scripts/browser-smoke.mjs"
+  },
+  "dependencies": {
+    "astro": "7.4.8",
+    "gdal3.js": "2.8.1"
+  },
+  "devDependencies": {
+    "playwright": "1.57.0"
+  }
+}

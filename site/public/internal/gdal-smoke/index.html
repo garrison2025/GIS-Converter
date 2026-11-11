@@ -1,0 +1,34 @@
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="robots" content="noindex,nofollow"><title>GDAL/WASM Integration Test</title><script src="/engine/gdal3/gdal3.js"></script></head><body><h1>GDAL/WASM isolated integration gate</h1><p>This is not a public conversion tool.</p><pre id="result">NOT_STARTED</pre><script>
+window.__gdalResult={status:'NOT_STARTED',tests:[],errors:[]};
+const write=()=>document.querySelector('#result').textContent=JSON.stringify(window.__gdalResult,null,2);
+(async()=>{
+ const result=window.__gdalResult;result.status='RUNNING';write();
+ try{
+  if(typeof initGdalJs!=='function')throw new Error('initGdalJs absent');
+  const gdal=await initGdalJs({path:'/engine/gdal3',useWorker:false});
+  result.drivers=Object.keys(gdal.drivers?.vector||{});
+  const src='<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Point One</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
+  const input=new File([src],'source.kml',{type:'application/vnd.google-earth.kml+xml'});
+  const opened=await gdal.open(input);
+  const ds=opened?.datasets?.[0];
+  if(!ds)throw new Error('No dataset: '+JSON.stringify(opened?.errors));
+  try{
+   const target=await gdal.ogr2ogr(ds,['-f','GeoJSON','-t_srs','EPSG:4326'],'result.geojson');
+   const arr=Array.isArray(target?.all)&&target.all.length?target.all:[target];
+   let verified=false;
+   for(const f of arr){
+    const bytes=await gdal.getFileBytes(f);
+    if(!bytes?.length)continue;
+    const obj=JSON.parse(new TextDecoder().decode(bytes));
+    const feature=obj?.features?.[0];
+    const coord=feature?.geometry?.coordinates;
+    if(obj.type==='FeatureCollection'&&feature.geometry.type==='Point'&&Math.abs(coord[0]-116.4)<0.0001&&Math.abs(coord[1]-39.9)<0.0001&&Object.values(feature.properties||{}).some(v=>String(v)==='Point One'))verified=true;
+   }
+   if(!verified)throw new Error('GeoJSON geometry, coordinates, or attributes mismatch');
+   result.tests.push({route:'KML to GeoJSON',passed:true,independentParsedGeometry:true});
+  }finally{try{gdal.close(ds)}catch{}}
+  result.status='PASSED';
+ }catch(e){result.status='FAILED';result.errors.push(String(e?.stack||e));}
+ finally{write();document.body.dataset.done='true'}
+})();
+</script></body></html>
