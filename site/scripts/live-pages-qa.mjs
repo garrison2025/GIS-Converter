@@ -40,6 +40,10 @@ async function uploadAndDownload(page,slug,{name,bytes,mime},ext){
  assert(q.kind==='local-structural-quality-report','Wrong quality report kind '+slug);
  assert(q.input?.features===1&&q.output?.features===1,'Quality report feature counts not 1/1 '+slug);
  assert(q.checks.some(c=>c.id==='feature-count'&&c.status==='pass'),'Feature count check should pass '+slug);
+ if(slug==='kml-to-geojson'){
+  const check=q.checks.find(c=>c.id==='coordinate-bounds');
+  assert(check?.status==='pass','Known CRS84 GeoJSON point output still triggers false warning: '+JSON.stringify({crs:q.output?.crs,issues:q.output?.issues,check}));
+ }
  assert(q.checks.some(c=>c.id==='attribute-fidelity'&&c.status==='unavailable'),'Attribute check incorrectly certified '+slug);
  report.tests.push({route:slug,quality:{status,featuresIn:q.input.features,featuresOut:q.output.features,checks:q.checks.map(x=>({id:x.id,status:x.status}))}});
 
