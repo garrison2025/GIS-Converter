@@ -27,8 +27,8 @@ jobs:
         run: npm run pack:gdal
       - name: Compile actual Astro project
         run: npm run build
-      - name: Install Chromium for real browser test
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium Firefox and WebKit for real browser and GIS conversion tests
+        run: npx playwright install --with-deps chromium firefox webkit
       - name: Probe independent cancellable classic Worker running real GDAL
         run: node scripts/isolated-worker-probe.mjs
       - name: Reject hostile GIS archives before loading WebAssembly
@@ -65,6 +65,8 @@ jobs:
         run: npm run smoke:live-loopback
       - name: Verify Pages Function in local Wrangler runtime with real GDAL/WASM
         run: npm run smoke:wrangler
+      - name: P32 verify real Firefox WebKit and Chromium conversions using compressed Pages WASM
+        run: npm run smoke:crossbrowser-local
       - name: Verify short Cloudflare build command is configured
         run: node --input-type=module -e "import pkg from './package.json' with {type:'json'}; if (!pkg.scripts['build:pages']?.includes('prepare:pages')) process.exit(1)"
       - name: Save evidence even on failure
@@ -95,6 +97,8 @@ jobs:
             site/p27-live-loopback-results.json
             site/dist/release.json
             site/wrangler-pages-result.json
+            site/p32-wrangler-preflight.json
+            site/p32-crossbrowser-local-results.json
             site/package-lock.json
           if-no-files-found: warn
   seo-activation-dry-run:
