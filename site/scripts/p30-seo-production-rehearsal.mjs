@@ -104,7 +104,7 @@ try{
  });
  check('X-Robots-Tag global noindex is absent but private audit routes remain noindex',()=>{
   const headers=read('_headers');
-  assert(!/\/\*\s*\n\s*X-Robots-Tag:\s*noindex\b/im.test(headers));
+  assert(!/^\/\*\s*\r?\n\s*X-Robots-Tag:\s*noindex\b/im.test(headers));
   assert.match(headers,/\/internal\/\*\s*\n\s*X-Robots-Tag:\s*noindex/i);
   assert.match(headers,/\/release\.json\s*\n\s*X-Robots-Tag:\s*noindex/i);
   assert.match(headers,/\/engine\/\*\s*\n\s*X-Robots-Tag:\s*noindex/i);
