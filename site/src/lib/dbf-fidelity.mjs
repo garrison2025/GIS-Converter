@@ -48,7 +48,7 @@ function parseDbf(bytes){
  }
  return {bytes,count,headerLength,recordLength,fields,lookup};
 }
-function readValue(dbf,row,field){
+export function readComparableDbfValue(dbf,row,field){
  const start=dbf.headerLength+row*dbf.recordLength+field.offset;
  const bytes=dbf.bytes.subarray(start,start+field.width);
  if(field.type==='C')return {kind:'text',value:textDecoder.decode(bytes).replace(/ +$/g,'')};
@@ -76,17 +76,10 @@ function collectExpected(features){
  }
  return {keys,rows};
 }
-export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
- try{
-  if(!(inputBytes instanceof Uint8Array)||inputBytes.length>MAX_GEOJSON_BYTES)
-   fail('Input exceeds 15 MiB inspection cap');
-  const input=JSON.parse(textDecoder.decode(inputBytes));
-  if(input?.type!=='FeatureCollection'||!Array.isArray(input.features))
-   fail('Input is not a GeoJSON FeatureCollection');
-  const {keys,rows}=collectExpected(input.features);
-  if(!(shpZipBytes instanceof Uint8Array)||shpZipBytes.length>MAX_DBF_BYTES)
+export async function readUtf8ShapefileDbf(shpBytes) {
+  if(!(shpBytes instanceof Uint8Array)||shpBytes.length>MAX_DBF_BYTES)
    fail('Shapefile archive exceeds inspection cap');
-  const zip=await JSZip.loadAsync(shpZipBytes);
+  const zip=await JSZip.loadAsync(shpBytes);
   const names=Object.keys(zip.files).filter(name=>!zip.files[name].dir);
   const dbfNames=names.filter(name=>name.toLowerCase().endsWith('.dbf'));
   if(dbfNames.length!==1)fail('Exactly one DBF is required');
@@ -99,7 +92,18 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
    fail('DBF UTF-8 encoding marker unavailable');
   const cpg=(await cpgFile.async('string')).trim().toUpperCase().replace(/[-_]/g,'');
   if(cpg!=='UTF8'&&cpg!=='65001')fail('DBF character encoding is not verified as UTF-8');
-  const dbf=parseDbf(await dbfFile.async('uint8array'));
+  return parseDbf(await dbfFile.async('uint8array'));
+}
+
+export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
+ try{
+  if(!(inputBytes instanceof Uint8Array)||inputBytes.length>MAX_GEOJSON_BYTES)
+   fail('Input exceeds 15 MiB inspection cap');
+  const input=JSON.parse(textDecoder.decode(inputBytes));
+  if(input?.type!=='FeatureCollection'||!Array.isArray(input.features))
+   fail('Input is not a GeoJSON FeatureCollection');
+  const {keys,rows}=collectExpected(input.features);
+  const dbf=await readUtf8ShapefileDbf(shpZipBytes);
   if(dbf.count!==rows)return status('review','DBF record count differs from source GeoJSON: '+rows+' input → '+dbf.count+' output.');
   let compared=0,unavailable=0,mismatches=0,eligibleFields=0;
   for(const [name,present] of keys){
@@ -124,7 +128,7 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
     if(!source)continue;
     compared++;
     let target;
-    try{target=readValue(dbf,row,field)}
+    try{target=readComparableDbfValue(dbf,row,field)}
     catch{unavailable++;compared--;continue}
     if(target.kind==='unsupported'){unavailable++;compared--;continue}
     if(source.kind!==target.kind){mismatches++;continue}
