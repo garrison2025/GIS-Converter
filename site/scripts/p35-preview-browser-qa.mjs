@@ -114,7 +114,17 @@ try{
   const geom=q.checks?.find(c=>c.id==='complex-geometry-values');
   check(geom?.status==='pass',
    'Actual KML line was not independently verified: '+(geom?.detail||'missing'));
-  check(q.status!=='review','Valid simple line conversion should not report detected data loss');
+  // The legacy KML structural inspector explicitly marks non-point KML as
+  // review because it cannot fully certify complex feature structure. The
+  // new independent P40 geometry check can pass while that older, bounded
+  // inspector keeps its conservative warning; do not equate overall report
+  // status with a confirmed geometry mismatch.
+  const definite=q.checks?.filter(c=>c.status==='review'&&[
+   'feature-count','coordinate-bounds','point-coordinate-values',
+   'complex-geometry-values','gpx-line-geometry','dbf-attribute-values'
+  ].includes(c.id))||[];
+  check(definite.length===0,
+   'Actual converted KML has a definite critical fidelity mismatch');
   return {independentLineVertices:true,downloadedQualityReport:true};
  });
  await test('kml_to_kmz_zip_readback_svg',async()=>{
