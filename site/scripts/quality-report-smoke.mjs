@@ -614,6 +614,133 @@ await test('P24 invalid calendar day never becomes a fabricated gx:Track timesta
  assert(xml.includes('116.1,39.5,101.5 116.11,39.51,102'));
 });
 
+
+await test('P25 GPX +08:00 GPS clock is converted to the same canonical UTC time',async()=>{
+ const src=p24Source.replace('2026-11-12T01:00:00Z','2026-11-12T09:00:00+08:00');
+ const kml=new TextDecoder().decode(enhanceGpxTimedKml(buf(src),buf(p24Kml)).bytes);
+ assert(kml.includes('<when>2026-11-12T01:00:00.000Z</when>'));
+ assert.equal(inspectGpxTimedKml(src,kml).status,'pass');
+});
+await test('P25 GPS clock value 24:00 is not silently moved to the following calendar date',async()=>{
+ const src=p24Source.replace('2026-11-12T01:00:05Z','2026-11-12T24:00:05Z');
+ const result=enhanceGpxTimedKml(buf(src),buf(p24Kml));
+ assert.equal(result.converted,1);
+ const xml=new TextDecoder().decode(result.bytes);
+ assert(!xml.includes('2026-11-13T00:00:05'));
+});
+await test('P25 invalid timezone UTC +14:30 cannot produce a gx:Track timeline',async()=>{
+ const src=p24Source.replace('2026-11-12T01:00:05Z','2026-11-12T01:00:05+14:30');
+ const result=enhanceGpxTimedKml(buf(src),buf(p24Kml));
+ assert.equal(result.converted,1);
+});
+await test('P25 GPS clock reset within a segment is kept as a plain KML path',async()=>{
+ const src=p24Source.replace('2026-11-12T01:00:05Z','2026-11-12T00:59:59Z');
+ const result=enhanceGpxTimedKml(buf(src),buf(p24Kml));
+ assert.equal(result.converted,1);
+ const xml=new TextDecoder().decode(result.bytes);
+ assert(xml.includes('116.1,39.5,101.5 116.11,39.51,102'));
+ assert(!xml.includes('2026-11-12T00:59:59.000Z'));
+});
+await test('P25 same-second repeated GPS timestamps are supported without inventing intervals',async()=>{
+ const src=p24Source.replace('2026-11-12T01:00:05Z','2026-11-12T01:00:00Z');
+ const transformed=enhanceGpxTimedKml(buf(src),buf(p24Kml));
+ assert.equal(transformed.converted,2);
+ assert.equal(inspectGpxTimedKml(src,new TextDecoder().decode(transformed.bytes)).status,'pass');
+});
+await test('P25 ISO offset crosses midnight and preserves canonical time and point order',async()=>{
+ const source=p24Source.replace('2026-11-12T01:00:00Z','2026-11-12T02:00:00+01:00')
+  .replace('2026-11-12T01:00:05Z','2026-11-12T02:00:05+01:00');
+ const out=enhanceGpxTimedKml(buf(source),buf(p24Kml));
+ assert.equal(out.converted,2);
+ assert.equal(inspectGpxTimedKml(source,new TextDecoder().decode(out.bytes)).status,'pass');
+});
+await test('P25 real-format-style Garmin GPX extensions do not masquerade as point times',async()=>{
+ const source='<gpx version="1.1" creator="synthetic Garmin-style regression" '+
+  'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">'+
+  '<trk><name>Device metadata</name><trkseg>'+
+  '<trkpt lat="38.866110" lon="-77.136286"><ele>90.98</ele>'+
+  '<time>2010-10-16T20:46:52Z</time><extensions><gpxtpx:TrackPointExtension>'+
+  '<gpxtpx:hr>113</gpxtpx:hr><gpxtpx:cad>84</gpxtpx:cad>'+
+  '</gpxtpx:TrackPointExtension></extensions></trkpt>'+
+  '<trkpt lat="38.866120" lon="-77.136275"><ele>91.15</ele>'+
+  '<time>2010-10-16T20:46:53Z</time></trkpt>'+
+  '</trkseg></trk></gpx>';
+ const kml='<kml><Placemark><LineString><coordinates>'+
+  '-77.136286,38.866110,90.98 -77.136275,38.866120,91.15'+
+  '</coordinates></LineString></Placemark></kml>';
+ const enhanced=enhanceGpxTimedKml(buf(source),buf(kml));
+ assert.equal(enhanced.converted,1);
+ const text=new TextDecoder().decode(enhanced.bytes);
+ assert(text.includes('<when>2010-10-16T20:46:52.000Z</when>'));
+ assert(!text.includes('113')&&!text.includes('cad>84'));
+ assert.equal(inspectGpxTimedKml(source,text).status,'pass');
+});
+function p25LongTrack(segments,pointsPerSegment,{extensions=false}={}){
+ const start=Date.parse('2026-11-12T00:00:00Z'),lines=[],kml=[];
+ for(let seg=0;seg<segments;seg++){
+  const points=[],coords=[];
+  for(let i=0;i<pointsPerSegment;i++){
+   const lon=(116.0+seg*0.002+i*0.000002).toFixed(6);
+   const lat=(39.0+seg*0.002+i*0.000002).toFixed(6);
+   const stamp=new Date(start+seg*pointsPerSegment*1000+i*1000).toISOString().replace('.000Z','Z');
+   const ext=extensions&&(i%13===0)?'<extensions><gpxtpx:TrackPointExtension>'+
+     '<gpxtpx:hr>105</gpxtpx:hr></gpxtpx:TrackPointExtension></extensions>':'';
+   points.push('<trkpt lat="'+lat+'" lon="'+lon+'"><ele>110.5</ele><time>'+stamp+'</time>'+ext+'</trkpt>');
+   coords.push(lon+','+lat+',110.5');
+  }
+  lines.push('<trkseg>'+points.join('')+'</trkseg>');
+  kml.push('<Placemark><LineString><coordinates>'+coords.join(' ')+
+   '</coordinates></LineString></Placemark>');
+ }
+ const source='<?xml version="1.0"?><gpx version="1.1" xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">'+
+ '<trk><name>synthetic dense and segmented GPS stress</name>'+lines.join('')+'</trk></gpx>';
+ return {source,kml:'<kml><Document>'+kml.join('')+'</Document></kml>'};
+}
+await test('P25 100 distinct GPS track segments with extensions retain all pairs and sequence',async()=>{
+ const sample=p25LongTrack(100,12,{extensions:true});
+ const transformed=enhanceGpxTimedKml(buf(sample.source),buf(sample.kml));
+ assert.equal(transformed.converted,100);
+ assert.equal(transformed.vertices,1200);
+ const xml=new TextDecoder().decode(transformed.bytes);
+ assert.equal(inspectGpxTimedKml(sample.source,xml).status,'pass');
+ assert.equal([...xml.matchAll(/<when>/g)].length,1200);
+});
+await test('P25 6000-point dense GPS track stays within bounded local time verification',async()=>{
+ const sample=p25LongTrack(1,6000);
+ const result=enhanceGpxTimedKml(buf(sample.source),buf(sample.kml));
+ assert.equal(result.converted,1);
+ assert.equal(result.vertices,6000);
+ const xml=new TextDecoder().decode(result.bytes);
+ assert.equal(inspectGpxTimedKml(sample.source,xml).status,'pass');
+ assert.equal([...xml.matchAll(/<when>/g)].length,6000);
+});
+
+await test('P25 partially upgraded timed GPX segments cannot earn a blanket pass',async()=>{
+ const original=new TextDecoder().decode(enhanceGpxTimedKml(buf(p24Source),buf(p24Kml)).bytes);
+ const blocks=[...original.matchAll(/<gx:Track>[\s\S]*?<\/gx:Track>/g)];
+ assert.equal(blocks.length,2);
+ const partial=original.replace(blocks[1][0],
+  '<LineString><coordinates>116.12,39.52 116.13,39.53</coordinates></LineString>');
+ const direct=inspectGpxTimedKml(p24Source,partial);
+ assert.equal(direct.status,'unavailable');
+ assert(direct.detail.includes('1 independently eligible'));
+ const report=await createGISQualityReport(makeFile(p24Source,'partial-timed.gpx'),'gpx',buf(partial),'kml');
+ assert.equal(check(report,'gpx-line-geometry').status,'pass');
+ assert.equal(check(report,'gpx-timed-track').status,'unavailable');
+ assert.equal(assertNoDetectedCriticalDataLoss(report),true);
+});
+
+await test('P25 post-conversion gx XML size cap returns unchanged KML rather than unverified oversized time data',async()=>{
+ const bound=4*1024*1024;
+ const comment='<!--'+'x'.repeat(bound-p24Kml.length-32)+'-->';
+ const nearLimit=p24Kml.replace('<Document>','<Document>'+comment);
+ assert(new TextEncoder().encode(nearLimit).length<bound);
+ const output=enhanceGpxTimedKml(buf(p24Source),buf(nearLimit));
+ assert.equal(output.converted,0);
+ assert.equal(output.reason,'expanded-output-size-limit');
+ assert.equal(new TextDecoder().decode(output.bytes),nearLimit);
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;

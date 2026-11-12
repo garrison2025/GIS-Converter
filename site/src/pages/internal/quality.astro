@@ -499,6 +499,66 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {tamperedTimeBlocked:true};
  });
 
+
+ // P25 device-export-shape regressions: the data are synthetic, reproducible,
+ // and contain no identifiable real-user location history. They simulate
+ // supported GPX 1.1 Garmin-like extension fields and long multi-segment runs.
+ function p25BrowserGpx({segments,pointsPerSegment,extensions=false}){
+  const tracks=[],allStart=Date.parse('2026-11-12T00:00:00Z');
+  for(let seg=0;seg<segments;seg++){
+   const points=[];
+   for(let i=0;i<pointsPerSegment;i++){
+    const lon=(116.02+seg*.004+i*.000004).toFixed(6);
+    const lat=(39.02+seg*.004+i*.000004).toFixed(6);
+    const timestamp=new Date(allStart+(seg*pointsPerSegment+i)*1000).toISOString().replace('.000Z','Z');
+    const ext=extensions&&i%20===0?
+      '<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>112</gpxtpx:hr>'+
+      '<gpxtpx:cad>82</gpxtpx:cad></gpxtpx:TrackPointExtension></extensions>':'';
+    points.push('<trkpt lat="'+lat+'" lon="'+lon+'"><ele>105.5</ele>'+
+      '<time>'+timestamp+'</time>'+ext+'</trkpt>');
+   }
+   tracks.push('<trkseg>'+points.join('')+'</trkseg>');
+  }
+  return '<?xml version="1.0" encoding="UTF-8"?>'+
+   '<gpx version="1.1" creator="Synthetic P25 GPS QA" xmlns="http://www.topografix.com/GPX/1/1" '+
+   'xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v1">'+
+   '<trk><name>Synthetic GPS stress</name>'+tracks.join('')+'</trk></gpx>';
+ }
+ async function verifyP25BrowserLongTrack(target,segments,pointsPerSegment,extensions){
+  const text=p25BrowserGpx({segments,pointsPerSegment,extensions});
+  const input=new File([text],'p25-synthetic-gps-track.gpx');
+  const started=performance.now();
+  const converted=await convertGdal(gdal,input,'gpx',target);
+  const elapsedMs=Math.round(performance.now()-started);
+  let kml=new TextDecoder().decode(converted.bytes);
+  if(target==='kmz'){
+   const archive=await JSZip.loadAsync(converted.bytes);
+   kml=await archive.file('doc.kml')?.async('string');
+  }
+  assert(kml,'P25 long-track KML document was not generated');
+  const xml=new DOMParser().parseFromString(kml,'application/xml');
+  assert(!xml.getElementsByTagName('parsererror').length,'P25 long-track XML invalid');
+  const tracks=xml.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','Track');
+  const time=xml.getElementsByTagName('when');
+  const coords=xml.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','coord');
+  assert(tracks.length===segments,'P25 timed segments lost: '+tracks.length+' != '+segments);
+  assert(time.length===segments*pointsPerSegment,'P25 long-track timestamps lost');
+  assert(coords.length===time.length,'P25 long-track point/time mismatch');
+  const r=await createGISQualityReport(input,'gpx',converted.bytes,target);
+  for(const id of ['gpx-line-geometry','gpx-timed-track','gpx-logical-features'])
+   assert(r.checks.find(c=>c.id===id)?.status==='pass',
+    'P25 long-track independent inspector error: '+id+' '+JSON.stringify(r.checks.find(c=>c.id===id)));
+  assertNoDetectedCriticalDataLoss(r);
+  return {source:'synthetic-device-shaped-GPX',target,segments,vertices:time.length,
+    conversionMs:elapsedMs,inputBytes:input.size,outputBytes:converted.bytes.length};
+ }
+ await mark('P25 real GDAL Garmin-style GPX 24 segments and 1920 points to KML',
+  ()=>verifyP25BrowserLongTrack('kml',24,80,true));
+ await mark('P25 real GDAL Garmin-style GPX 24 segments and 1920 points to KMZ',
+  ()=>verifyP25BrowserLongTrack('kmz',24,80,true));
+ await mark('P25 real GDAL dense GPX 3500-point uninterrupted timed track to KML',
+  ()=>verifyP25BrowserLongTrack('kml',1,3500,false));
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}

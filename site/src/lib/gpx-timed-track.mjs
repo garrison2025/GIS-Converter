@@ -27,10 +27,16 @@ function isoTime(xml){
  const matches=[...xml.matchAll(/<(?:[\w.-]+:)?time\b[^>]*>\s*([^<]+?)\s*<\/(?:[\w.-]+:)?time\s*>/gi)];
  if(matches.length!==1)return null;
  const raw=matches[0][1].trim();
- if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/i.test(raw))return null;
- // Date.parse can silently normalize an invalid calendar date such as
- // February 31. Reject that before normalizing UTC offsets.
- const day=raw.slice(0,10),dateOnly=new Date(day+'T00:00:00Z');
+ const parts=raw.match(/^(\d{4}-\d\d-\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d{1,3})?(Z|([+-])(\d\d):(\d\d))$/i);
+ if(!parts)return null;
+ // JS Date.parse accepts 24:00 and may silently roll it into the next day.
+ // Validate the complete wall-clock and timezone offset independently.
+ const hour=Number(parts[2]),minute=Number(parts[3]),second=Number(parts[4]);
+ const zoneHour=parts[7]===undefined?0:Number(parts[7]);
+ const zoneMinute=parts[8]===undefined?0:Number(parts[8]);
+ if(hour>23||minute>59||second>59||zoneHour>14||zoneMinute>59||
+    (zoneHour===14&&zoneMinute!==0))return null;
+ const day=parts[1],dateOnly=new Date(day+'T00:00:00Z');
  if(!Number.isFinite(dateOnly.getTime())||dateOnly.toISOString().slice(0,10)!==day)return null;
  const n=Date.parse(raw);
  return Number.isFinite(n)?new Date(n).toISOString():null;
@@ -71,9 +77,13 @@ function sourceSegments(xml){
    vertices+=pts.length;if(vertices>MAX_VERTICES)return null;
    const sig=signature(pts.map(p=>[p.lon,p.lat]));
    all.push(sig);
+   // A device recording can contain clock resets / unordered timestamps.
+   // Never manufacture an apparently playable trajectory with reverse time.
    const timed=pts.length>=2&&pts.every(p=>p.time!==null);
+   const chronological=timed&&pts.every((p,i)=>i===0||
+     Date.parse(p.time)>=Date.parse(pts[i-1].time));
    const altCount=pts.filter(p=>p.elevation!==null).length;
-   if(timed&&(altCount===0||altCount===pts.length))
+   if(chronological&&(altCount===0||altCount===pts.length))
     candidates.push({sig,pts});
   }
  }
@@ -136,7 +146,11 @@ export function enhanceGpxTimedKml(gpxBytes,kmlBytes){
   if(!converted)return {bytes:kmlBytes,converted:0,reason:'no-unique-output-line-match'};
   const fixed=updated.replace(/<kml\b[^>]*>/i,match=>
    /xmlns:gx\s*=/i.test(match)?match:match.replace(/>$/,' xmlns:gx="'+gxNamespace+'">'));
-  return {bytes:new TextEncoder().encode(fixed),converted,vertices,reason:'converted'};
+  const encoded=new TextEncoder().encode(fixed);
+  // The independent readback inspector has the same bounded XML limit.
+  // Never return a "time-enhanced" document too large to validate locally.
+  if(encoded.length>MAX_XML)return {bytes:kmlBytes,converted:0,reason:'expanded-output-size-limit'};
+  return {bytes:encoded,converted,vertices,reason:'converted'};
  }catch{return {bytes:kmlBytes,converted:0,reason:'not-inspectable'};}
 }
 /**
@@ -171,9 +185,13 @@ export function inspectGpxTimedKml(gpx,kml){
     Math.abs((p.elevation??0)-coords[i][2])>1e-6)){issues++;continue}
   matched++;
  }
+ const missing=Math.max(0,src.eligible.size-matched);
  const detail=matched+' timestamped GPX track segments ('+points+
   ' gx coordinates) independently compared; '+issues+
-  ' invalid or mismatched gx tracks. Untimed/ambiguous segments are not certified.';
+  ' invalid or mismatched gx tracks; '+missing+
+  ' independently eligible timed segments not verified as gx:Track. Untimed/ambiguous segments are not certified.';
  if(issues)return {status:'review',detail:'GPX timed trajectory mismatch: '+detail};
- return {status:matched?'pass':'unavailable',detail};
+ // A partial gx:Track conversion cannot earn a blanket "pass".
+ // Valid ordinary LineStrings remain downloadable under explicit warnings.
+ return {status:matched&&missing===0?'pass':'unavailable',detail};
 }
