@@ -185,9 +185,13 @@ export function inspectGpxTimedKml(gpx,kml){
     Math.abs((p.elevation??0)-coords[i][2])>1e-6)){issues++;continue}
   matched++;
  }
+ const missing=Math.max(0,src.eligible.size-matched);
  const detail=matched+' timestamped GPX track segments ('+points+
   ' gx coordinates) independently compared; '+issues+
-  ' invalid or mismatched gx tracks. Untimed/ambiguous segments are not certified.';
+  ' invalid or mismatched gx tracks; '+missing+
+  ' independently eligible timed segments not verified as gx:Track. Untimed/ambiguous segments are not certified.';
  if(issues)return {status:'review',detail:'GPX timed trajectory mismatch: '+detail};
- return {status:matched?'pass':'unavailable',detail};
+ // A partial gx:Track conversion cannot earn a blanket "pass".
+ // Valid ordinary LineStrings remain downloadable under explicit warnings.
+ return {status:matched&&missing===0?'pass':'unavailable',detail};
 }
