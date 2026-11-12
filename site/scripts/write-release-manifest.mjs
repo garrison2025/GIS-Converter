@@ -13,6 +13,7 @@ import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {routes} from '../src/lib/gdal-matrix.mjs';
+import {getSeoLaunchConfig} from '../src/lib/seo-launch-config.mjs';
 
 export const releaseFilename='release.json';
 const validSha=/^[0-9a-f]{40}$/i;
@@ -27,6 +28,7 @@ export function createReleaseManifest(env=process.env,{cwd=process.cwd(),now=new
  const branch=env.CF_PAGES_BRANCH||env.GITHUB_REF_NAME||git(['symbolic-ref','--short','HEAD'],cwd)||'unknown';
  if(!validBranch.test(branch))throw Error('Invalid public branch identifier');
  if(!(now instanceof Date)||!Number.isFinite(now.getTime()))throw Error('Build timestamp invalid');
+ const seo=getSeoLaunchConfig(env);
  const buildProvider=env.CF_PAGES==='1'||env.CF_PAGES_COMMIT_SHA?'cloudflare-pages':
   env.GITHUB_ACTIONS==='true'?'github-actions':'local';
  return {
@@ -36,8 +38,8 @@ export function createReleaseManifest(env=process.env,{cwd=process.cwd(),now=new
   branch,
   buildProvider,
   builtAt:now.toISOString(),
-  phase:'engineering-preview',
-  indexing:'noindex',
+  phase:seo.mode,
+  indexing:seo.indexable?'index':'noindex',
   converterRoutes:routes.length
  };
 }
