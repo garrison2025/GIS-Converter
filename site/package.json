@@ -32,7 +32,9 @@
     "smoke:complex-local": "node scripts/p29-complex-local-smoke.mjs",
     "smoke:complex-live": "node scripts/p29-live-complex-gis.mjs",
     "smoke:seo-rehearsal": "node scripts/p30-seo-production-rehearsal.mjs",
-    "smoke:seo-live": "node scripts/p30-live-seo-acceptance.mjs"
+    "smoke:seo-live": "node scripts/p30-live-seo-acceptance.mjs",
+    "smoke:mobile-local": "node scripts/p31-mobile-local-smoke.mjs",
+    "smoke:mobile-live": "node scripts/p31-mobile-ux-qa.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
