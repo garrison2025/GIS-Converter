@@ -93,6 +93,52 @@ const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Pla
   const bad=await corruptCentral(f,({dv,ptr})=>dv.setUint16(ptr+10,99,true));
   return rejects(bad,'kmz','compression method');
  });
+ await test('reject mismatched central and local ZIP filenames',async()=>{
+  const f=await makeZip('names.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({u8,ptr})=>{u8[ptr+46]='x'.charCodeAt(0)});
+  return rejects(bad,'kmz','filenames differ');
+ });
+ await test('reject mismatched local ZIP compression method',async()=>{
+  const f=await makeZip('methods.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>{
+   const local=dv.getUint32(ptr+42,true);
+   dv.setUint16(local+8,0,true);
+  });
+  return rejects(bad,'kmz','flags or compression differ');
+ });
+ await test('reject forged local ZIP checksum',async()=>{
+  const f=await makeZip('crc.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>{
+   const local=dv.getUint32(ptr+42,true);
+   dv.setUint32(local+14,dv.getUint32(local+14,true)^1,true);
+  });
+  return rejects(bad,'kmz','checksum or sizes differ');
+ });
+ await test('reject mismatched local ZIP compressed byte count',async()=>{
+  const f=await makeZip('sizes.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>{
+   const local=dv.getUint32(ptr+42,true);
+   dv.setUint32(local+18,dv.getUint32(local+18,true)+1,true);
+  });
+  return rejects(bad,'kmz','checksum or sizes differ');
+ });
+ await test('reject ZIP payload outside local file area',async()=>{
+  const f=await makeZip('boundary.kmz',{'doc.kml':kml},'STORE');
+  const bad=await corruptCentral(f,({u8,dv,ptr})=>{
+   const local=dv.getUint32(ptr+42,true);
+   dv.setUint32(ptr+20,u8.length,true);
+   dv.setUint32(local+18,u8.length,true);
+  });
+  return rejects(bad,'kmz','payload boundaries invalid');
+ });
+ await test('reject mismatched local ZIP security flags',async()=>{
+  const f=await makeZip('flags.kmz',{'doc.kml':kml});
+  const bad=await corruptCentral(f,({dv,ptr})=>{
+   const local=dv.getUint32(ptr+42,true);
+   dv.setUint16(local+6,dv.getUint16(local+6,true)|1,true);
+  });
+  return rejects(bad,'kmz','flags or compression differ');
+ });
  await test('reject XML DTD',()=>rejects(new File(['<?xml version="1.0"?><!DOCTYPE x [<!ENTITY y "test">]><kml></kml>'],'x.kml'),'kml','DTD'));
  await test('reject NUL text file',()=>rejects(new File([new Uint8Array([65,0,66])],'x.csv'),'csv','NUL'));
  await test('reject over 15 MiB',()=>rejects(new File([new Uint8Array(15*1024*1024+1)],'oversize.kml'),'kml','15 MiB'));

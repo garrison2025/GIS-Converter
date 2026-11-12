@@ -47,7 +47,7 @@ function extractZipDirectory(buf){
  if(totalEntries>MAX_ZIP_ENTRIES)fail('too many ZIP entries');
  if(offset+size!==end)fail('invalid central-directory boundaries');
  let ptr=offset,totalExpanded=0;
- const seen=new Set(),records=[];
+ const seen=new Set(),records=[],localRanges=[];
  for(let i=0;i<totalEntries;i++){
   if(ptr+46>end || view.getUint32(ptr,true)!==0x02014b50)fail('malformed central directory');
   const madeBy=view.getUint16(ptr+4,true);
@@ -67,25 +67,54 @@ function extractZipDirectory(buf){
   if(![0,8].includes(method))fail('unsupported ZIP compression method');
   if(diskNo || expanded===0xffffffff || compressed===0xffffffff || localOffset===0xffffffff)
     fail('ZIP64 or multi-disk ZIP unsupported');
-  if(localOffset+30>offset || view.getUint32(localOffset,true)!==0x04034b50)
-    fail('invalid local ZIP header');
-  const name=readName(bytes.subarray(ptr+46,ptr+46+nameLen),flags);
-  const folder=name.endsWith('/');
-  const normal=cleanPath(folder?name.slice(0,-1):name);
-  const collision=low(normal);
-  if(seen.has(collision))fail('duplicate archive path');
-  seen.add(collision);
-  if((madeBy>>8)===3 && ((external>>>16)&0xf000)===0xa000)fail('ZIP symlinks unsupported');
+  // Evaluate entry-specific limits and path safety independently of local header consistency.
   if(expanded>MAX_ENTRY_BYTES)fail('ZIP entry exceeds expanded-size limit');
   if(compressed===0 && expanded>0)fail('impossible ZIP expansion');
   if(compressed>0 && expanded>compressed*MAX_EXPANSION_RATIO && expanded>4096)
     fail('suspicious ZIP expansion ratio');
+  const name=readName(bytes.subarray(ptr+46,ptr+46+nameLen),flags);
+  const folder=name.endsWith('/');
+  const normal=cleanPath(folder?name.slice(0,-1):name);
+  if(localOffset+30>offset || view.getUint32(localOffset,true)!==0x04034b50)
+    fail('invalid local ZIP header');
+  // ZIP readers may consult local headers instead of the central directory.
+  // Reject contradictory metadata before the archive reaches the GDAL/WASM runtime.
+  if(flags & ~(0x800|0x08|0x06))fail('unsupported ZIP entry flags');
+  const localFlags=view.getUint16(localOffset+6,true);
+  const localMethod=view.getUint16(localOffset+8,true);
+  const localNameLen=view.getUint16(localOffset+26,true);
+  const localExtraLen=view.getUint16(localOffset+28,true);
+  if(localFlags!==flags||localMethod!==method)
+    fail('local and central ZIP flags or compression differ');
+  const localNameStart=localOffset+30;
+  const payloadStart=localNameStart+localNameLen+localExtraLen;
+  const payloadEnd=payloadStart+compressed;
+  if(localNameLen!==nameLen||payloadEnd>offset||payloadEnd<payloadStart)
+    fail('ZIP local entry length or payload boundaries invalid');
+  if(!bytes.subarray(localNameStart,localNameStart+localNameLen)
+    .every((value,i)=>value===bytes[ptr+46+i]))
+    fail('local and central ZIP filenames differ');
+  // With bit 3 set, ZIP writers may use a post-data descriptor; the local
+  // CRC/size fields may legitimately be zero, so only compare when bit 3 is off.
+  if(!(flags&0x08)&&(
+    view.getUint32(localOffset+14,true)!==view.getUint32(ptr+16,true)||
+    view.getUint32(localOffset+18,true)!==compressed||
+    view.getUint32(localOffset+22,true)!==expanded
+  ))fail('local and central ZIP checksum or sizes differ');
+  localRanges.push([localOffset,payloadEnd]);
+  const collision=low(normal);
+  if(seen.has(collision))fail('duplicate archive path');
+  seen.add(collision);
+  if((madeBy>>8)===3 && ((external>>>16)&0xf000)===0xa000)fail('ZIP symlinks unsupported');
   totalExpanded+=expanded;
   if(totalExpanded>MAX_EXPANDED_BYTES)fail('ZIP total expansion exceeds limit');
   if(!folder)records.push({name:normal,bytes:expanded,compressionMethod:method});
   ptr=next;
  }
  if(ptr!==end)fail('unparsed ZIP central directory data');
+ localRanges.sort((a,b)=>a[0]-b[0]);
+ for(let i=1;i<localRanges.length;i++)
+  if(localRanges[i][0]<localRanges[i-1][1])fail('overlapping ZIP local entries');
  return {entries:records,totalExpanded};
 }
 export async function preflightGISInput(file,source,target){
