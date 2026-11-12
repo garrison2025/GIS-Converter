@@ -671,6 +671,27 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
     heapNote:'Chromium JS heap snapshot only, not process RSS or mobile device memory certification'};
  });
 
+ await mark('P26 GDAL/WASM recovers after malformed GPX and converts a public real track',async()=>{
+  const invalid=new File(['not a valid GPX XML document'],'p26-malformed.gpx');
+  let rejected=false;
+  try{await convertGdal(gdal,invalid,'gpx','kml')}catch{rejected=true}
+  assert(rejected,'Malformed GPX was not rejected by the browser conversion engine');
+  // The same GDAL instance must recover without a page refresh or Worker
+  // reinitialization, rather than leaking stale files or corrupting state.
+  const file=new File([realEtrexGpx],'p26-recovery-public-real.gpx');
+  const converted=await convertGdal(gdal,file,'gpx','kml');
+  const doc=new DOMParser().parseFromString(new TextDecoder().decode(converted.bytes),'application/xml');
+  assert(!doc.getElementsByTagName('parsererror').length,'KML invalid after previous failed GPX job');
+  const coords=doc.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','coord');
+  const times=doc.getElementsByTagName('when');
+  assert(coords.length===104&&times.length===104,'GDAL runtime did not recover full 104-point timed conversion');
+  const quality=await createGISQualityReport(file,'gpx',converted.bytes,'kml');
+  assert(quality.checks.find(c=>c.id==='gpx-timed-track')?.status==='pass',
+    'Timestamp integrity not preserved following failed job');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {rejectedMalformedSource:true,recoveredWithoutReload:true,verifiedPublicTrackVertices:coords.length};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
