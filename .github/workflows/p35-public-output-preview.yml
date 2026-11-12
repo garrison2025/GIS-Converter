@@ -31,7 +31,7 @@ jobs:
           npx playwright install --with-deps chromium firefox webkit
       - name: Verify public release SHA and preview noindex policy
         run: npm run smoke:live-release
-      - name: Check twelve real converted-output local SVG previews on public Pages
+      - name: Check thirteen real converted-output local SVG previews on public Pages
         run: npm run smoke:preview-live
       - name: Recheck public 19 single-file GIS upload and download routes
         run: node scripts/live-all-routes.mjs
