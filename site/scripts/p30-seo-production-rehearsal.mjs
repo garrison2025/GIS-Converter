@@ -108,6 +108,8 @@ try{
   assert.match(headers,/\/internal\/\*\s*\n\s*X-Robots-Tag:\s*noindex/i);
   assert.match(headers,/\/release\.json\s*\n\s*X-Robots-Tag:\s*noindex/i);
   assert.match(headers,/\/engine\/\*\s*\n\s*X-Robots-Tag:\s*noindex/i);
+  assert.match(headers,/https:\/\/gis-converter\.pages\.dev\/\*\s*\n\s*X-Robots-Tag:\s*noindex/i);
+  assert.match(headers,/https:\/\/:version\.gis-converter\.pages\.dev\/\*\s*\n\s*X-Robots-Tag:\s*noindex/i);
   assert.match(headers,/X-Content-Type-Options:\s*nosniff/i);
   assert.match(headers,/Permissions-Policy:/i);
  });
