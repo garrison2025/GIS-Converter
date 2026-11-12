@@ -74,6 +74,8 @@ const label=formats[from].name+' to '+formats[to].name;
  .details-grid h3{font-size:17px;margin:0 0 8px}.details-grid p{font-size:14px;color:#526d7c;margin:0}
  .steps{padding-left:24px;color:#466777;font-size:15px}.steps li{margin:10px 0;padding-left:4px}
  .route-guide{padding:0 0 44px}.route-guide h2{font-size:25px;line-height:1.3;margin:0 0 14px}.route-guide h3{font-size:17px;margin:0 0 8px}.route-guide p,.route-guide li{font-size:14px;color:#526d7c;line-height:1.72}.route-guide p{margin:0}.guide-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.guide-layout article{background:#fff;border:1px solid #dce7eb;border-radius:13px;padding:20px}.guide-layout .wide{grid-column:span 2}.route-guide .faq{margin-top:28px}.faq-entry{padding:14px 0;border-bottom:1px solid #e2eaed}.faq-entry h3{margin:0 0 6px}.related-tools{margin-top:26px}.related-tools ul{padding-left:18px;margin:8px 0}.related-tools li{margin:6px 0}.related-tools a{font-weight:650;text-decoration:underline;text-underline-offset:3px}@media(max-width:550px){.guide-layout{grid-template-columns:1fr}.guide-layout .wide{grid-column:auto}}
+ .skip-link{position:absolute;z-index:10;top:8px;left:8px;transform:translateY(-150%);background:#fff;color:#074a44;padding:10px 15px;border:2px solid #08796d;border-radius:8px}.skip-link:focus{transform:none}
+ .result,.error,.status,.uploadzone{overflow-wrap:anywhere}
  .footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:15px;padding:30px 0;border-top:1px solid #dfe9eb;color:#637a89;font-size:13px}
  [hidden]{display:none!important}
  @media(max-width:800px){.grid{grid-template-columns:1fr}.sidebar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.sidebar .card{margin:0}}
@@ -82,29 +84,30 @@ const label=formats[from].name+' to '+formats[to].name;
  </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to conversion form</a>
 <header><div class="container nav">
  <a href="/" class="logo"><span class="symbol" aria-hidden="true">◇</span>GIS Converter</a>
- <span class="navside">Browser-local GIS conversion · Engineering preview</span>
+ <span class="navside">{seo.indexable?'Browser-local GIS conversion · Free tools':'Browser-local GIS conversion · Engineering preview'}</span>
 </div></header>
-<main class="container">
+<main class="container" id="main-content">
  <nav class="crumb" aria-label="Breadcrumb"><a href="/">All converters</a> <span aria-hidden="true">›</span> {label}</nav>
  <p class="eyebrow">GDAL / WebAssembly · Local file processing</p>
  <h1>{label} — online file converter</h1>
  <p class="lead">{info.context}</p>
- <div class="meta"><span class="tag">Free test tool</span><span class="tag">15 MiB input limit</span><span class="tag">No file uploads to our servers</span></div>
+ <div class="meta"><span class="tag">{seo.indexable?'Free GIS converter':'Free test tool'}</span><span class="tag">15 MiB input limit</span><span class="tag">No file uploads to our servers</span></div>
  <div class="grid">
  <div>
  <form id="converter" class="card" data-slug={slug} aria-label={label+' conversion form'}>
   <h2>Convert your file</h2><p>Select your {info.source.name} file. The converter runs inside an isolated Web Worker in this browser.</p>
   <div class="uploadzone">
    <label for="file">Choose {info.source.name} input file</label>
-   <input id="file" name="file" type="file" accept={info.source.accept} required/>
+   <input id="file" name="file" type="file" accept={info.source.accept} aria-describedby="file-info" required/>
    <p class="small" id="file-info">{info.source.help}</p>
   </div>
   <div class="actions"><button id="submit" type="submit">Convert to {info.target.name} <span aria-hidden="true">→</span></button><button id="cancel" type="button" hidden>Cancel conversion</button></div>
   <p id="status" class="status" role="status" aria-live="polite">Ready to convert.</p>
   <p id="error" class="error" role="alert" hidden></p>
-  <section id="result" class="result" aria-label="Conversion result" hidden>
+  <section id="result" class="result" aria-label="Conversion result" tabindex="-1" hidden>
    <strong>Conversion complete</strong>
    <p id="details"></p><p id="warning"></p>
    <section id="quality" class="quality" aria-label="GIS output quality checks" hidden>
@@ -159,7 +162,7 @@ const label=formats[from].name+' to '+formats[to].name;
   </nav>
  </section>
 </main>
-<footer class="container footer"><a href="/">← All 19 GIS converters</a><span>Engineering preview · No paid features enabled · Noindex</span></footer>
+<footer class="container footer"><a href="/">← All 19 GIS converters</a><span>{seo.indexable?'Free browser tools · No paid features enabled':'Engineering preview · No paid features enabled · Noindex'}</span></footer>
 <script>
 import {routes} from '../../lib/gdal-matrix.mjs';
 import {runIsolatedConversion} from '../../lib/isolated-task.mjs';
@@ -171,9 +174,19 @@ const selected=document.querySelector('#file-info');
 const placeholder=selected.textContent;
 let linkUrl=null,reportUrl=null,activeTask=null;
 file.addEventListener('change',()=>{
+  // The prior download/quality report belongs to the previous source file.
+  // Hide and revoke both immediately to prevent accidentally exporting
+  // stale results after a source replacement, even if the next file is invalid.
+  resetOutput();
+  error.hidden=true;error.textContent='';
+  status.textContent='Ready to convert.';
   if(!file.files?.length){selected.textContent=placeholder;return}
   const f=file.files[0];
   selected.textContent=f.name+' · '+(f.size/1048576).toFixed(2)+' MiB selected (15 MiB maximum)';
+  if(f.size>15*1024*1024){
+    status.textContent='Selected file exceeds the 15 MiB input limit.';
+    error.hidden=false;error.textContent='Choose a smaller file (15 MiB maximum).';
+  }
 });
 const resetOutput=()=>{
  if(linkUrl){URL.revokeObjectURL(linkUrl);linkUrl=null;}
@@ -181,15 +194,18 @@ const resetOutput=()=>{
  document.querySelector('#quality').hidden=true;
  result.hidden=true;
  const dl=document.querySelector('#download');dl.removeAttribute('href');
+ const qa=document.querySelector('#quality-download');qa.removeAttribute('href');
 };
 cancelButton.addEventListener('click',()=>activeTask?.cancel());
 form?.addEventListener('submit',async(event)=>{
  event.preventDefault();
  if(activeTask||!file.files?.[0])return;
- const tuple=routes.find(r=>r[0]===form.dataset.slug);
- if(!tuple){error.hidden=false;error.textContent='Unsupported conversion';return}
- if(file.files[0].size>15*1024*1024){error.hidden=false;error.textContent='The 15 MiB test file limit was exceeded.';return}
+ // Reset stale artifacts BEFORE rejecting an unsupported or oversized input.
  resetOutput();
+ error.hidden=true;error.textContent='';
+ const tuple=routes.find(r=>r[0]===form.dataset.slug);
+ if(!tuple){error.hidden=false;error.textContent='Unsupported conversion';status.textContent='Unsupported conversion route.';return}
+ if(file.files[0].size>15*1024*1024){error.hidden=false;error.textContent='The 15 MiB test file limit was exceeded.';status.textContent='Choose a smaller input file.';return}
  btn.disabled=true;file.disabled=true;cancelButton.hidden=false;form.setAttribute('aria-busy','true');
  error.hidden=true;status.textContent='Converting in an isolated Web Worker…';
  let task;
@@ -226,6 +242,9 @@ form?.addEventListener('submit',async(event)=>{
   }
 
   result.hidden=false;status.textContent='Conversion completed; verify output in GIS software.';
+  // Move keyboard focus to the newly revealed result without auto-starting
+  // a download. Screen readers can then inspect warnings and quality checks.
+  result.focus({preventScroll:true});
  }catch(e){
   if(task&&activeTask!==task)return;
   if(e?.code==='CANCELLED'){status.textContent='Conversion cancelled. You may retry.'}

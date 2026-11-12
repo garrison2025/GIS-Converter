@@ -1,0 +1,49 @@
+name: GIS Converter P31 one-shot public mobile UX and file lifecycle (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p31-live-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p31-live-mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for actual Cloudflare deployment with exact P31 main SHA
+        run: node scripts/p31-await-live-release.mjs
+      - name: Install locked test dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify public release identity and preview noindex settings
+        run: npm run smoke:live-release
+      - name: Install actual Chromium for responsive browser checks
+        run: npx playwright install --with-deps chromium
+      - name: Test mobile widths keyboard accessibility real downloads and stale file invalidation
+        run: npm run smoke:mobile-live
+      - name: Regress all 19 public GIS input and output routes
+        run: node scripts/live-all-routes.mjs
+      - name: Archive actual public browser acceptance evidence on failure or success
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p31-live-mobile-ux-evidence
+          path: |
+            site/p31-live-deployment-wait.json
+            site/p31-mobile-live-results.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Uses public URLs and synthetic fixtures only; no deploy, payment, or index settings changes.

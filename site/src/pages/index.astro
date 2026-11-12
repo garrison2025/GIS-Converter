@@ -55,6 +55,7 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  .step{background:#fff;border:1px solid #dde9e7;border-radius:14px;padding:24px}
  .step .num{display:inline-grid;place-items:center;width:31px;height:31px;background:#e4f5ee;color:#0a786c;font-weight:800;border-radius:9px}
  .step h3{margin:13px 0 6px;font-size:17px}.step p{margin:0;font-size:14px;color:#557080}
+ .skip-link{position:absolute;z-index:10;top:8px;left:8px;transform:translateY(-150%);background:#fff;color:#074a44;padding:10px 15px;border:2px solid #08796d;border-radius:8px}.skip-link:focus{transform:none}
  .footer{padding:26px 0;border-top:1px solid #e1e9ec;font-size:13px;color:#607583;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
  [hidden]{display:none!important}
  @media(max-width:800px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:1fr;gap:12px}.hero{padding:50px 0}.navlinks{gap:10px}}
@@ -63,18 +64,19 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  </style>
 </head>
 <body>
+ <a class="skip-link" href="#main-content">Skip to conversion tools</a>
  <header><div class="container nav">
  <a class="logo" href="/"><span class="symbol" aria-hidden="true">◇</span>GIS Converter</a>
  <nav class="navlinks" aria-label="Main navigation"><a href="#tools">Conversion tools</a><a href="#how">How it works</a><a href="#formats">Formats</a></nav>
  </div></header>
- <main>
+ <main id="main-content">
  <section class="hero">
   <div class="container">
    <p class="eyebrow">Private by design · GDAL-powered</p>
    <h1>Convert GIS files in your browser.</h1>
    <p class="intro">Convert KML, KMZ, Shapefile, GeoJSON, GPX and CSV without uploading your data to a conversion server. Choose one of 19 format routes and download the result locally.</p>
    <div class="herocta"><a href="#tools" class="primary">Explore 19 converters <span aria-hidden="true">→</span></a><span class="micro">No account required · 15 MiB input limit</span></div>
-   <div class="stats" aria-label="Product facts"><span class="chip">Files stay in your browser</span><span class="chip">GDAL/WebAssembly engine</span><span class="chip">19 conversion routes</span><span class="chip">Free engineering preview</span></div>
+   <div class="stats" aria-label="Product facts"><span class="chip">Files stay in your browser</span><span class="chip">GDAL/WebAssembly engine</span><span class="chip">19 conversion routes</span><span class="chip">{seo.indexable?'Free GIS tools':'Free engineering preview'}</span></div>
   </div>
  </section>
  <section id="tools" class="section container">
@@ -90,7 +92,7 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
     </a>)}</div>
   </section>)}
   <p id="empty" hidden role="status">No tools match that search. Try a format such as KML, SHP or GeoJSON.</p>
-  <div class="notice" role="note"><strong>Engineering preview:</strong> Small sample conversions have been tested, but complex geometry and metadata require review. Do not use generated files for safety-critical or professional decisions without validating them in GIS software.</div>
+  <div class="notice" role="note"><strong>{seo.indexable?'Data quality notice:':'Engineering preview:'}</strong> Basic routes and selected complex geometry cases have been tested. Other geometries, projections, field encodings and metadata still require review. Independently validate generated files in GIS software before professional or safety-critical use.</div>
  </section>
  <section id="how" class="explainer">
   <div class="container"><h2>How it works</h2><p>GDAL runs in a dedicated background Web Worker in your browser; the file is not sent to a remote conversion service.</p>
