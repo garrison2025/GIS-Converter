@@ -500,6 +500,21 @@ await test('P23 GPX extension ele must never override actual point elevation',as
  assert(new TextDecoder().decode(patched.bytes).includes('116.4,39.9,90.125'));
 });
 
+await test('P23 earlier self-closing GPX route points cannot swallow a later elevated trackpoint',async()=>{
+ const source='<gpx><rte><rtept lon="116.3" lat="39.8"/>'+
+  '<rtept lon="116.35" lat="39.85"><ele>120</ele></rtept></rte>'+
+  '<trk><trkseg><trkpt lon="116.1" lat="39.6"><ele>135.25</ele></trkpt>'+
+  '<trkpt lon="116.15" lat="39.65"/></trkseg></trk></gpx>';
+ const kml='<kml><Placemark><LineString><coordinates>116.3,39.8 116.35,39.85</coordinates></LineString></Placemark>'+
+  '<Placemark><LineString><coordinates>116.1,39.6 116.15,39.65</coordinates></LineString></Placemark></kml>';
+ const output=applyGpxElevationToKml(buf(source),buf(kml));
+ const xml=new TextDecoder().decode(output.bytes);
+ assert.equal(output.applied,2);
+ assert(xml.includes('116.35,39.85,120'));
+ assert(xml.includes('116.1,39.6,135.25'));
+ assert(xml.includes('116.15,39.65</coordinates>'));
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
