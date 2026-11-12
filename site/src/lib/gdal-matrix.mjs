@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {applyGpxElevationToKml} from './gpx-elevation.mjs';
 export const routes=[
 ['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
 ['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
@@ -25,8 +26,7 @@ async function collect(gdal,path){
 export async function convertGdal(gdal,input,src,dst){
  if(!types[dst]||!types[src])throw Error('Unsupported GIS format');
  if(input.size>15*1024*1024)throw Error('Input exceeds the 15 MiB test limit');
- const openOptions=src==='csv'?['X_POSSIBLE_NAMES=longitude,lon,x','Y_POSSIBLE_NAMES=latitude,lat,y']:
-  src==='gpx'?['ELE_AS_25D=YES']:[];
+ const openOptions=src==='csv'?['X_POSSIBLE_NAMES=longitude,lon,x','Y_POSSIBLE_NAMES=latitude,lat,y']:[];
  const opened=await gdal.open(input,openOptions,['shp','kmz'].includes(src)?['vsizip']:[]);
  const ds=opened.datasets?.[0];if(!ds)throw Error('GDAL could not open '+src+': '+JSON.stringify(opened.errors||[]));
  let files;
@@ -43,6 +43,19 @@ export async function convertGdal(gdal,input,src,dst){
   if(src==='gpx')options.push('waypoints','routes','tracks');
   files=await collect(gdal,await gdal.ogr2ogr(ds,options,'gis_'+src+'_to_'+dst));
  }finally{try{gdal.close(ds)}catch{}}
+ if(src==='gpx'&&['kml','kmz'].includes(dst)){
+  // The tested browser GDAL build does not reliably materialize GPX <ele>
+  // as KML Z even when ELE_AS_25D is requested. Add *unambiguous* source
+  // elevation values to the output's existing Point/LineString coordinates.
+  // Never infer timestamps or vertical datums, and never manufacture Z when
+  // source elevation is absent or ambiguous.
+  const kmlKey=[...files.keys()].find(name=>name.toLowerCase().endsWith('.kml'));
+  if(kmlKey){
+   const sourceBytes=new Uint8Array(await input.arrayBuffer());
+   const patched=applyGpxElevationToKml(sourceBytes,files.get(kmlKey));
+   files.set(kmlKey,patched.bytes);
+  }
+ }
  if(dst==='shp'){
   const exts=[...files.keys()].map(n=>n.toLowerCase().split('.').pop());
   for(const ext of ['shp','shx','dbf'])if(!exts.includes(ext))throw Error('Shapefile missing .'+ext);
