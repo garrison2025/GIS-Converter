@@ -312,7 +312,7 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   const value=report.checks.find(c=>c.id==='dbf-attribute-values');
   assert(value?.status==='pass','GDAL DBF attributes did not match: '+JSON.stringify(value));
   assertNoDetectedCriticalDataLoss(report);
-  return {status:value.status,detail:value.detail};
+  return {dbfStatus:value.status,detail:value.detail};
  });
 
  await mark('P22 altered GDAL-produced DBF field prevents output download',async()=>{
@@ -346,7 +346,7 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   let blocked=false;
   try{assertNoDetectedCriticalDataLoss(report)}catch(error){blocked=error.code==='DATA_LOSS'}
   assert(blocked,'Corrupted DBF was not withheld');
-  return {status:value.status,withheld:true};
+  return {dbfStatus:value.status,withheld:true};
  });
 
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
