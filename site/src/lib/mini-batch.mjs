@@ -30,7 +30,7 @@ export function validateMiniBatchSelection(fileList){
 export function safeBatchEntryName(value){
  let name=String(value||'').replace(/[/\\]/g,'-')
   .replace(/[\x00-\x1f\x7f<>:"|?*]/g,'-')
-  .replace(/^\.+/,'').replace(/[. ]+$/g,'').trim();
+  .replace(/^[.\- ]+/,'').replace(/[. ]+$/g,'').trim();
  if(!name||name==='-'||name==='..')name='converted-file';
  return name.slice(0,112);
 }
