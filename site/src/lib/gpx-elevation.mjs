@@ -17,17 +17,21 @@ function numbers(a,b){
  return {lon,lat,key:normalized(lon,lat)};
 }
 function extractElevations(gpx){
+ // CDATA and comments may contain apparent GPX point tags that are text only.
+ const xml=gpx.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g,'');
  const known=new Map(),ambiguous=new Set();
  const tag=/<(?:[\w.-]+:)?(?:wpt|trkpt|rtept)\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?(?:wpt|trkpt|rtept)\s*>/gi;
  let count=0;
- for(const m of gpx.matchAll(tag)){
+ for(const m of xml.matchAll(tag)){
   if(++count>MAX_POINTS)return null;
   const attrs=m[1],inner=m[2];
   const lon=attrs.match(/(?:^|\s)lon\s*=\s*["']([^"']+)["']/i)?.[1];
   const lat=attrs.match(/(?:^|\s)lat\s*=\s*["']([^"']+)["']/i)?.[1];
   const point=lon!==undefined&&lat!==undefined?numbers(lon,lat):null;
   if(!point)continue;
-  const ele=inner.match(/<(?:[\w.-]+:)?ele\b[^>]*>\s*([^<]+?)\s*<\/(?:[\w.-]+:)?ele\s*>/i)?.[1]?.trim();
+  // Do not treat similarly named extension fields as GPX elevation.
+  const visible=inner.replace(/<(?:[\w.-]+:)?extensions\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?extensions\s*>/gi,'');
+  const ele=visible.match(/<(?:[\w.-]+:)?ele\b[^>]*>\s*([^<]+?)\s*<\/(?:[\w.-]+:)?ele\s*>/i)?.[1]?.trim();
   if(ele===undefined||!numberPattern.test(ele))continue;
   const altitude=Number(ele);
   if(!Number.isFinite(altitude)||Math.abs(altitude)>100000)continue;
