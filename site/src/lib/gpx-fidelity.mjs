@@ -82,6 +82,24 @@ function readOutput(text) {
    lines.push(line);
  }
  if(openTags(xml,'LineString').length!==lines.length&&!limit)valid=false;
+ // A gx:Track is a LineString replacement with timestamped gx:coord tuples.
+ // Count its ordered XY positions as one original GPX track segment.
+ for(const block of [...xml.matchAll(/<gx:Track\b[^>]*>([\s\S]*?)<\/gx:Track\s*>/gi)].map(m=>m[1])){
+  const coords=[...block.matchAll(/<gx:coord\b[^>]*>([^<]*)<\/gx:coord\s*>/gi)];
+  const times=[...block.matchAll(/<when\b[^>]*>([^<]*)<\/when\s*>/gi)];
+  vertices+=coords.length;
+  if(lines.length>=MAX_LINES||vertices>MAX_VERTICES){limit=true;break}
+  if(coords.length<2||coords.length!==times.length){valid=false;continue}
+  const line=[];
+  for(const m of coords){
+   const parts=m[1].trim().split(/\s+/).map(Number);
+   if(parts.length!==3||parts.some(n=>!Number.isFinite(n))||
+      Math.abs(parts[0])>180||Math.abs(parts[1])>90){valid=false;continue}
+   line.push(parts.slice(0,2));
+  }
+  if(line.length!==coords.length)valid=false;
+  lines.push(line);
+ }
  return {lines,valid,limit,vertices};
 }
 // Approximate 0.1 m at the equator. No original coordinates are serialized
@@ -110,7 +128,7 @@ export function inspectGpxLineFidelity(gpxXml,kmlXml) {
  if(!source.lines.length)
   return {status:'unavailable',detail:'No GPX routes or track segments to compare.',metadata};
  const summary=source.lines.length+' GPX route/track segments ('+source.vertices+
-   ' vertices) → '+output.lines.length+' KML lines ('+output.vertices+' vertices)';
+   ' vertices) → '+output.lines.length+' KML line/gx:Track segments ('+output.vertices+' vertices)';
  if(source.lines.length!==output.lines.length||source.vertices!==output.vertices)
   return {status:'review',detail:'GPX line geometry count mismatch: '+summary,metadata};
  const before=source.lines.map(signature).sort(),after=output.lines.map(signature).sort();
