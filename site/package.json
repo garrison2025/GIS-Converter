@@ -41,7 +41,10 @@
     "smoke:native-live": "node scripts/p33-native-ogr-compat.mjs",
     "smoke:mini-batch-unit": "node scripts/p34-mini-batch-unit.mjs",
     "smoke:mini-batch-local": "node scripts/p34-mini-batch-local.mjs",
-    "smoke:mini-batch-live": "node scripts/p34-mini-batch-qa.mjs"
+    "smoke:mini-batch-live": "node scripts/p34-mini-batch-qa.mjs",
+    "smoke:preview-unit": "node scripts/p35-preview-unit.mjs",
+    "smoke:preview-local": "node scripts/p35-preview-local.mjs",
+    "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
