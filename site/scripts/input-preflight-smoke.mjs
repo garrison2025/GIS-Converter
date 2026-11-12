@@ -16,7 +16,7 @@ try{
  await page.waitForFunction(()=>document.body.dataset.done==='true',{timeout:40000});
  const tests=await page.evaluate(()=>window.__preflightResult);
  report.cases=tests.cases;report.pageErrors=runtimeErrors;
- if(tests.status!=='PASSED'||tests.cases.length!==23||runtimeErrors.length)
+ if(tests.status!=='PASSED'||tests.cases.length!==29||runtimeErrors.length)
   throw Error('Preflight checks failed: '+JSON.stringify(report));
  // Verify actual converter worker rejects a malformed KMZ before fetching the GDAL WASM.
  const upload=await browser.newPage();
