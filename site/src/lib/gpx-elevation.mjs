@@ -32,9 +32,17 @@ function extractElevations(gpx){
   // Do not treat similarly named extension fields as GPX elevation.
   const visible=inner.replace(/<(?:[\w.-]+:)?extensions\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?extensions\s*>/gi,'');
   const ele=visible.match(/<(?:[\w.-]+:)?ele\b[^>]*>\s*([^<]+?)\s*<\/(?:[\w.-]+:)?ele\s*>/i)?.[1]?.trim();
-  if(ele===undefined||!numberPattern.test(ele))continue;
+  if(ele===undefined||!numberPattern.test(ele)){
+   // A second visit to the same XY may have no elevation. Never fill it
+   // with an earlier point's value, even if that other value is valid.
+   ambiguous.add(point.key);known.delete(point.key);
+   continue;
+  }
   const altitude=Number(ele);
-  if(!Number.isFinite(altitude)||Math.abs(altitude)>100000)continue;
+  if(!Number.isFinite(altitude)||Math.abs(altitude)>100000){
+   ambiguous.add(point.key);known.delete(point.key);
+   continue;
+  }
   if(ambiguous.has(point.key))continue;
   if(known.has(point.key)&&known.get(point.key)!==altitude){
    known.delete(point.key);ambiguous.add(point.key);
