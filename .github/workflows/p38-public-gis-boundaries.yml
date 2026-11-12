@@ -33,7 +33,7 @@ jobs:
         run: npm run smoke:preview-boundaries
       - name: Verify deployed release and noindex engineering-preview protection
         run: npm run smoke:live-release
-      - name: Check 14 real output previews including public Garmin GPX
+      - name: Check 15 real output previews including P39 CSV quality download
         run: npm run smoke:preview-live
       - name: Recheck 19 GIS conversion routes and real downloads on public site
         run: node scripts/live-all-routes.mjs

@@ -3,6 +3,7 @@ import {inspectShpToGeojsonDbfFidelity} from './shp-geojson-fidelity.mjs';
 import {inspectGeojsonToShpDbfFidelity} from './dbf-fidelity.mjs';
 import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
 import {inspectGpxTimedKml} from './gpx-timed-track.mjs';
+import {inspectPointCoordinateFidelity} from './point-coordinate-fidelity.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -10,11 +11,19 @@ const blank=(format,reason='')=>({format,features:null,geometry:[],bbox:null,crs
 const fail=message=>{throw Error(message)};
 function geometryKind(s){return ({Point:'point',MultiPoint:'point',LineString:'line',MultiLineString:'line',Polygon:'polygon',MultiPolygon:'polygon'})[s]||'unknown'}
 function addPoint(box,p){
- if(!Array.isArray(p)||p.length<2||!Number.isFinite(p[0])||!Number.isFinite(p[1]))return false;
+ if(!Array.isArray(p)||p.length<2||!Number.isFinite(p[0])||!Number.isFinite(p[1])||
+    Math.abs(p[0])>180||Math.abs(p[1])>90)return false;
  box[0]=Math.min(box[0],p[0]);box[1]=Math.min(box[1],p[1]);
  box[2]=Math.max(box[2],p[0]);box[3]=Math.max(box[3],p[1]);return true;
 }
 function endBox(box){return box.every(Number.isFinite)?box.map(n=>Math.round(n*1e7)/1e7):null}
+const strictDecimal=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?$/;
+function pointFromText(lon,lat){
+ const x=String(lon??'').trim(),y=String(lat??'').trim();
+ if(!strictDecimal.test(x)||!strictDecimal.test(y))return null;
+ const a=Number(x),b=Number(y);
+ return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a)<=180&&Math.abs(b)<=90?[a,b]:null;
+}
 function walkCoords(data,box){
  if(!Array.isArray(data))return false;
  if(data.length>=2&&typeof data[0]==='number')return addPoint(box,data);
@@ -69,8 +78,14 @@ function parseGeojson(bytes){
   const geometry=f?.geometry;
   if(!geometry){valid=false;continue}
   const type=geometryKind(geometry.type);
-  kinds.add(type);if(type!=='point')pointsOnly=false;
-  if(type==='unknown'||!walkCoords(geometry.coordinates,box))valid=false;
+  kinds.add(type);
+  // MultiPoint contains several XY positions per feature; a matching feature
+  // count and bbox is not proof of point-to-point equality in this schema.
+  if(geometry.type!=='Point')pointsOnly=false;
+  if(type==='unknown'||!walkCoords(geometry.coordinates,box)||
+   (geometry.type==='Point'&&(!Array.isArray(geometry.coordinates)||
+    geometry.coordinates.length<2||typeof geometry.coordinates[0]!=='number')))
+   valid=false;
  }
  meta.features=data.features.length;meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.fieldRisk=scanGeojsonFieldRisk(data.features);
@@ -100,10 +115,8 @@ function parseDelimitedCsv(bytes){
   }else if(record.some(s=>s.trim())){
    rows++;
    if(idxLon>=0&&idxLat>=0){
-    const lon=Number(record[idxLon]),lat=Number(record[idxLat]);
-    if(record[idxLon]?.trim()!==''&&record[idxLat]?.trim()!==''&&Number.isFinite(lon)&&Number.isFinite(lat)&&Math.abs(lon)<=180&&Math.abs(lat)<=90){
-     if(addPoint(box,[lon,lat]))good++;
-    }
+    const parsed=pointFromText(record[idxLon],record[idxLat]);
+    if(parsed&&addPoint(box,parsed))good++;
    }
   }
   record=[];
@@ -146,8 +159,10 @@ function parseKml(bytes,format='kml'){
   if(coords.length!==1){valid=false;continue}
   const positions=coords[0][1].trim().split(/\s+/);
   if(positions.length!==1){valid=false;continue}
-  const coord=positions[0].split(',').slice(0,2).map(Number);
-  if(!addPoint(box,coord)){valid=false;continue}
+  const xyz=positions[0].split(',');
+  const coord=xyz.length>=2&&xyz.length<=3?pointFromText(xyz[0],xyz[1]):null;
+  if(!coord||(xyz.length===3&&!strictDecimal.test(String(xyz[2]).trim()))||
+     !addPoint(box,coord)){valid=false;continue}
   points++;
  }
  meta.geometry=[...kinds];meta.bbox=endBox(box);
@@ -171,9 +186,10 @@ function parseGpx(bytes){
  const hasRoutes=routes.length>0||tracks.length>0;
  const box=[Infinity,Infinity,-Infinity,-Infinity];let valid=true;
  for(const m of waypoints){
-  const lat=m[1].match(/\blat\s*=\s*["']([^"']+)["']/i);
-  const lon=m[1].match(/\blon\s*=\s*["']([^"']+)["']/i);
-  if(!lat||!lon||!addPoint(box,[Number(lon[1]),Number(lat[1])]))valid=false;
+  const lat=m[1].match(/(?:^|\s)lat\s*=\s*["']([^"']*)["']/i);
+  const lon=m[1].match(/(?:^|\s)lon\s*=\s*["']([^"']*)["']/i);
+  const parsed=pointFromText(lon?.[1],lat?.[1]);
+  if(!parsed||!addPoint(box,parsed))valid=false;
  }
  meta.features=hasRoutes?null:waypoints.length;meta.geometry=hasRoutes?['point','line']:['point'];
  meta.crs='WGS84';meta.bbox=endBox(box);
@@ -217,7 +233,7 @@ async function parseZip(bytes,format){
  const shxCount=(shx.byteLength-100)/8;
  const meta=blank('shp');
  meta.features=count;meta.geometry=[kinds[shape]||'unknown'];
- meta.pointOnly=meta.geometry[0]==='point';
+ meta.pointOnly=[1,11,21].includes(shape);
  meta.complete=Number.isInteger(shxCount)&&shxCount===count&&meta.geometry[0]!=='unknown';
  if(!meta.complete)meta.issues.push('Shapefile index, record count or geometry type could not be verified');
  const projected=/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(prj);
@@ -279,6 +295,18 @@ export async function createGISQualityReport(input,source,output,target){
    add('gpx-vertex-metadata','unavailable','GPX point-level metadata has not been verified.');
   }
  }
+ // P39: matching point counts and bounding boxes do not prove that middle
+ // coordinates were preserved. Compare each supported point independently
+ // against ACTUAL converted output bytes, without writing XY into the report.
+ // This check is conservative: multipart/unsupported geometries remain
+ // "unavailable" rather than a false verification or a conversion blocker.
+ if(new Set(['geojson','kml','kmz','csv','gpx']).has(source)&&
+    new Set(['geojson','kml','kmz','csv','gpx']).has(target)&&source!==target){
+  const match=before.crs==='WGS84'&&after.crs==='WGS84'?
+   await inspectPointCoordinateFidelity(inputBytes,source,output,target):
+   {status:'unavailable',detail:'WGS84 coordinate system not independently confirmed for both formats.'};
+  add('point-coordinate-values',match.status,match.detail);
+ }
  if(before.pointOnly&&after.pointOnly&&before.bbox&&after.bbox&&before.crs==='WGS84'&&after.crs==='WGS84'){
   const matches=before.bbox.every((x,i)=>eq(x,after.bbox[i]));
   add('coordinate-bounds',matches?'pass':'review',matches?'Point longitude/latitude bounds agree':'Coordinates differ: input '+before.bbox.join(', ')+'; output '+after.bbox.join(', '));
@@ -326,7 +354,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');

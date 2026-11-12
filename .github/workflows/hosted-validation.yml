@@ -31,6 +31,8 @@ jobs:
         run: npm run smoke:antimeridian-unit
       - name: P38 verify GPX KML KMZ SHP coordinate, timestamp and polygon preview boundaries
         run: npm run smoke:preview-boundaries
+      - name: P39 independently match WGS84 point coordinates and block silent interior-point loss
+        run: npm run smoke:point-fidelity
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file

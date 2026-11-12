@@ -31,7 +31,7 @@ jobs:
           npx playwright install --with-deps chromium firefox webkit
       - name: Verify deployed release and noindex engineering-preview gate
         run: npm run smoke:live-release
-      - name: Verify 14 real-browser converted-output previews including P37 dateline and P38 eTrex cases
+      - name: Verify 15 real-browser converted-output previews including P37 P38 P39 cases
         run: npm run smoke:preview-live
       - name: Recheck 19 public GIS conversion routes and real downloads
         run: node scripts/live-all-routes.mjs

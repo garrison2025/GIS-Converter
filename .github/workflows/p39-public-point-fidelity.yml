@@ -1,0 +1,51 @@
+name: GIS Converter P39 public independent point-fidelity acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p39-point-fidelity-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p39-public-point-fidelity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 33
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact merged P39 SHA on Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned packages and Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Assert independent WGS84 point coordinate checks detect unchanged-bbox loss
+        run: npm run smoke:point-fidelity
+      - name: Verify deployed SHA and noindex engineering-preview security gate
+        run: npm run smoke:live-release
+      - name: Check 15 converted-output previews including P39 real CSV-to-KML quality download
+        run: npm run smoke:preview-live
+      - name: Recheck 19 public GIS converter routes and real downloads
+        run: node scripts/live-all-routes.mjs
+      - name: Preserve public point-fidelity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p39-public-point-fidelity-evidence
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p35-preview-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Testing only; never uploads user GIS files or writes billing/SEO settings.
