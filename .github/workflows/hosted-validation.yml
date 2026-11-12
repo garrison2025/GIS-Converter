@@ -49,6 +49,8 @@ jobs:
         run: npm run smoke:ui
       - name: Verify 19 routes through real isolated Worker upload and download
         run: npm run smoke:all-ui
+      - name: P31 verify mobile width keyboard navigation stale output Blob cleanup and retry
+        run: npm run smoke:mobile-local
       - name: Verify hard cancel, timeout, retry and worker termination
         run: npm run smoke:cancel
       - name: Real browser GDAL test using only gzip-encoded WASM response
@@ -77,6 +79,7 @@ jobs:
             site/gdal-gzip-report.json
             site/gdal-route-matrix.json
             site/astro-tool-ui-result.json
+            site/p31-mobile-local-results.json
             site/gis-quality-results.json
             site/live-matrix-report.json
             site/all-ui-gate-error.txt
