@@ -26,11 +26,23 @@ function block(text,tag){
  const re=new RegExp('<(?:[\\w.-]+:)?'+tag+'\\b[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?'+tag+'\\s*>','gi');
  return [...text.matchAll(re)].map(m=>m[1]);
 }
+// Reject JavaScript's Number('') === 0 coercion: an empty coordinate must
+// never become an apparent valid point at the WGS84 origin in a preview.
+function strictCoordinate(raw,axis){
+ const value=String(raw??'').trim();
+ if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value))
+  throw Error('Missing or malformed '+axis+' coordinate');
+ const n=Number(value);
+ if(!Number.isFinite(n))throw Error('Non-finite '+axis+' coordinate');
+ return n;
+}
 function coordinates(text){
  return text.trim().split(/\s+/).filter(Boolean).map(token=>{
   const parts=token.split(',');
-  if(parts.length<2||parts[0]===''||parts[1]==='')throw Error('Incomplete KML coordinate tuple');
-  return [Number(parts[0]),Number(parts[1])];
+  if(parts.length<2||parts.length>3)throw Error('Invalid KML coordinate tuple length');
+  if(parts.length===3)strictCoordinate(parts[2],'KML altitude');
+  return [strictCoordinate(parts[0],'KML longitude'),
+   strictCoordinate(parts[1],'KML latitude')];
  });
 }
 function kmlGeometries(fragment){
@@ -61,9 +73,17 @@ function kmlGeometries(fragment){
   lines.length===1?lines[0]:lines);
  const trackBlocks=[...fragment.matchAll(/<gx:Track\b[^>]*>([\s\S]*?)<\/gx:Track\s*>/gi)];
  for(const m of trackBlocks){
-  const points=[...m[1].matchAll(/<gx:coord\b[^>]*>([^<]*)<\/gx:coord\s*>/gi)].map(p=>{
-   const values=p[1].trim().split(/\s+/);if(values.length<2)throw Error('Bad gx coordinate');
-   return [Number(values[0]),Number(values[1])];
+  const coordTags=[...m[1].matchAll(/<gx:coord\b[^>]*>([^<]*)<\/gx:coord\s*>/gi)];
+  const whenTags=[...m[1].matchAll(/<when\b[^>]*>([^<]*)<\/when\s*>/gi)];
+  if(coordTags.length!==whenTags.length||!coordTags.length||
+   whenTags.some(t=>!t[1].trim()||!Number.isFinite(Date.parse(t[1].trim()))))
+   throw Error('KML gx:Track has unpaired or invalid timestamps');
+  const points=coordTags.map(p=>{
+   const values=p[1].trim().split(/\s+/);
+   if(values.length!==3)throw Error('Incomplete gx:Track coordinate');
+   strictCoordinate(values[2],'gx:Track elevation');
+   return [strictCoordinate(values[0],'gx:Track longitude'),
+    strictCoordinate(values[1],'gx:Track latitude')];
   });
   if(points.length>=2)add('LineString',points);
   else if(points.length===1)add('Point',points[0]);
@@ -94,10 +114,11 @@ function fromKml(text){
  return collection(result);
 }
 function gpPoint(openTag){
- const lat=openTag.match(/\blat\s*=\s*["']([^"']+)["']/i),
-  lon=openTag.match(/\blon\s*=\s*["']([^"']+)["']/i);
+ const lat=openTag.match(/\blat\s*=\s*["']([^"']*)["']/i),
+  lon=openTag.match(/\blon\s*=\s*["']([^"']*)["']/i);
  if(!lat||!lon)throw Error('GPX point missing geographic coordinates');
- return [Number(lon[1]),Number(lat[1])];
+ return [strictCoordinate(lon[1],'GPX longitude'),
+  strictCoordinate(lat[1],'GPX latitude')];
 }
 function fromGpx(text){
  if(text.length>MAX_TEXT||/<!DOCTYPE\b|<!ENTITY\b/i.test(text)||!/<(?:\w+:)?gpx\b/i.test(text))
@@ -201,9 +222,18 @@ function shpGeometry(record,type){
  const polygons=[];let current=null;
  for(const ring of rings){
   if(ring.length<4)throw Error('Invalid SHP polygon ring');
+  const first=ring[0],last=ring[ring.length-1];
+  if(first[0]!==last[0]||first[1]!==last[1])
+   throw Error('SHP polygon ring is not closed');
   const a=signedArea(ring);
-  if(a<0||!current){current=[ring];polygons.push(current)}
-  else current.push(ring);
+  if(!Number.isFinite(a)||a===0)throw Error('SHP polygon ring has no valid signed area');
+  // Shapefile shells are clockwise and holes counterclockwise. Never
+  // fabricate an outer ring from a hole that appears first.
+  if(a<0){current=[ring];polygons.push(current)}
+  else {
+   if(!current)throw Error('SHP polygon hole appears before its outer ring');
+   current.push(ring);
+  }
  }
  return {type:polygons.length===1?'Polygon':'MultiPolygon',
   coordinates:polygons.length===1?polygons[0]:polygons};
