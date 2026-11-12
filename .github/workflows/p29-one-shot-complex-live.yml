@@ -1,0 +1,49 @@
+name: GIS Converter P29 one-shot complex public GIS acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p29-live-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p29-live-complex:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for the exact P29 main SHA on public Cloudflare Pages
+        run: node scripts/p29-await-live-release.mjs
+      - name: Install locked dependencies (no deploy)
+        run: npm ci --no-audit --no-fund
+      - name: Validate actual live release SHA and noindex SEO policy
+        run: npm run smoke:live-release
+      - name: Install Chromium for actual public browser file conversions
+        run: npx playwright install --with-deps chromium
+      - name: Verify six complex real public GIS conversions and rejections
+        run: npm run smoke:complex-live
+      - name: Recheck all 19 public basic GIS upload and download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Store public complex GIS acceptance proof, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p29-live-complex-acceptance-evidence
+          path: |
+            site/p29-live-deployment-wait.json
+            site/p29-complex-live-results.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Read-only automated QA. No Cloudflare secrets, external API writes, payments, or SEO indexing changes.
