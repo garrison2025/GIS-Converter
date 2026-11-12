@@ -291,13 +291,14 @@ async function p22Zip(fields,records,{cpg=true}={}){
   let off=head+row*recLen;dbf[off++]=0x20;
   for(const f of fields){
    const raw=String(rec[f.name]??'');
-   const string=f.type==='C'?raw.padEnd(f.width,' '):raw.padStart(f.width,' ');
-   const b=bytesEncoder.encode(string);
-   if(b.length>f.width)throw Error('Test record field exceeds its width: '+f.name);
+   const encoded=bytesEncoder.encode(raw);
+   if(encoded.length>f.width)throw Error('Test record field exceeds its width: '+f.name);
+   const b=new Uint8Array(f.width).fill(0x20);
+   b.set(encoded,f.type==='C'?0:f.width-encoded.length);
    dbf.set(b,off);off+=f.width;
   }
  });
- dbf.at(-1);dbf[dbf.length-1]=0x1a;
+ dbf[dbf.length-1]=0x1a;
  const zip=new JSZip();zip.file('data.dbf',dbf);if(cpg)zip.file('data.cpg','UTF-8');
  return new Uint8Array(await zip.generateAsync({type:'uint8array'}));
 }
