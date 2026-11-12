@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -24,7 +25,7 @@ function walkCoords(data,box){
  */
 function scanGeojsonFieldRisk(features){
  const names=new Set(), limit=512;
- let nestedValues=0, overflow=false;
+ let nestedValues=0, nullValues=0, oversizedStrings=0, highPrecisionNumbers=0, unsafeIntegers=0, overflow=false;
  for(const f of features){
   const props=f?.properties;
   if(!props || typeof props!=='object' || Array.isArray(props))continue;
@@ -32,6 +33,12 @@ function scanGeojsonFieldRisk(features){
    if(names.size<limit)names.add(name);
    else if(!names.has(name))overflow=true;
    if(value!==null && typeof value==='object')nestedValues++;
+   if(value===null)nullValues++;
+   if(typeof value==='string' && new TextEncoder().encode(value).length>254)oversizedStrings++;
+   if(typeof value==='number'){
+     if(Number.isInteger(value)&&!Number.isSafeInteger(value))unsafeIntegers++;
+     else if(Number.isFinite(value)&&Number(value.toPrecision(15))!==value)highPrecisionNumbers++;
+   }
   }
  }
  const encoder=new TextEncoder();
@@ -44,7 +51,7 @@ function scanGeojsonFieldRisk(features){
   if(prefixes.has(prefix))collisions++;else prefixes.add(prefix);
  }
  return {fieldNamesInspected:names.size,longNames,firstTenByteCollisions:collisions,
-   nonScalarValues:nestedValues,schemaScanLimited:overflow};
+   nonScalarValues:nestedValues,nullValues,oversizedStrings,highPrecisionNumbers,unsafeIntegers,schemaScanLimited:overflow};
 }
 
 function parseGeojson(bytes){
@@ -246,6 +253,26 @@ export async function createGISQualityReport(input,source,output,target){
      ' KML Placemarks. Auxiliary GPX route/track vertices are not separate features.');
   }else add('gpx-logical-features','unavailable','Full GPX logical feature accounting is unavailable for this file');
  }
+ if(source==='gpx'&&['kml','kmz'].includes(target)){
+  try{
+   const sourceText=new TextDecoder('utf-8',{fatal:true}).decode(inputBytes);
+   let targetBytes=output;
+   if(target==='kmz'){
+    const zip=await JSZip.loadAsync(output);
+    const doc=zip.file('doc.kml');
+    if(!doc||(doc._data?.uncompressedSize??0)>ZIP_LIMIT)throw Error('KMZ KML unavailable within inspection limit');
+    targetBytes=await doc.async('uint8array');
+    if(targetBytes.length>ZIP_LIMIT)throw Error('KMZ KML exceeds inspection limit');
+   }
+   const targetText=new TextDecoder('utf-8',{fatal:true}).decode(targetBytes);
+   const fidelity=inspectGpxLineFidelity(sourceText,targetText);
+   add('gpx-line-geometry',fidelity.status,fidelity.detail);
+   add('gpx-vertex-metadata',fidelity.metadata.status,fidelity.metadata.detail);
+  }catch{
+   add('gpx-line-geometry','unavailable','GPX route/track vertex check was unable to inspect the output.');
+   add('gpx-vertex-metadata','unavailable','GPX point-level metadata has not been verified.');
+  }
+ }
  if(before.pointOnly&&after.pointOnly&&before.bbox&&after.bbox&&before.crs==='WGS84'&&after.crs==='WGS84'){
   const matches=before.bbox.every((x,i)=>eq(x,after.bbox[i]));
   add('coordinate-bounds',matches?'pass':'review',matches?'Point longitude/latitude bounds agree':'Coordinates differ: input '+before.bbox.join(', ')+'; output '+after.bbox.join(', '));
@@ -264,6 +291,16 @@ export async function createGISQualityReport(input,source,output,target){
       : 'No field-name length, 10-byte prefix collision or non-scalar type risk found in inspected input; field values are not certified.'
   );
  }
+ if(source==='geojson'&&target==='shp'&&before.fieldRisk){
+   const r=before.fieldRisk;
+   const flagged=r.nullValues||r.oversizedStrings||r.highPrecisionNumbers||r.unsafeIntegers||r.schemaScanLimited;
+   add('shp-value-limits',flagged?'review':'pass',
+     'DBF value compatibility risk: '+r.nullValues+' explicit nulls, '+r.oversizedStrings+
+     ' UTF-8 strings longer than 254 bytes, '+r.highPrecisionNumbers+
+     ' high-precision numbers, '+r.unsafeIntegers+' unsafe integer values'+
+     (r.schemaScanLimited?'; schema scan bounded':'')+
+     '. These are risk indicators, not evidence of loss or preservation.');
+ }
  add('attribute-fidelity','unavailable','Field types, names, values, styles and metadata are not independently verified');
  const status=checks.some(c=>c.status==='review')?'review':checks.some(c=>c.status==='unavailable')?'partial':'checked';
  return {schemaVersion:1,kind:'local-structural-quality-report',status,source,target,input:before,output:after,checks,disclaimer:'Automated structural comparison only; NOT data certification. Complex geometries, attributes, projections and rendering require independent GIS review.'};
@@ -275,7 +312,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
