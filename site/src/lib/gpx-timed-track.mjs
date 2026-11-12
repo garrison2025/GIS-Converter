@@ -28,6 +28,10 @@ function isoTime(xml){
  if(matches.length!==1)return null;
  const raw=matches[0][1].trim();
  if(!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{1,3})?(?:Z|[+-]\d\d:\d\d)$/i.test(raw))return null;
+ // Date.parse can silently normalize an invalid calendar date such as
+ // February 31. Reject that before normalizing UTC offsets.
+ const day=raw.slice(0,10),dateOnly=new Date(day+'T00:00:00Z');
+ if(!Number.isFinite(dateOnly.getTime())||dateOnly.toISOString().slice(0,10)!==day)return null;
  const n=Date.parse(raw);
  return Number.isFinite(n)?new Date(n).toISOString():null;
 }
