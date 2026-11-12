@@ -9,6 +9,11 @@ const line=f({type:'LineString',coordinates:[[116.4,39.9],[114.1,22.5]]},{Name:'
 const point=f({type:'Point',coordinates:[12.5,48.1]},{Name:'site'});
 const ready=makeOutputGeometryPreview({type:'FeatureCollection',features:[polygon,line,point]});
 assert.equal(ready.status,'ready');
+for(const name of ['urn:ogc:def:crs:OGC:1.3:CRS84','urn:ogc:def:crs:EPSG::4326','OGC:CRS84']){
+ const datum=makeOutputGeometryPreview({type:'FeatureCollection',
+  crs:{type:'name',properties:{name}},features:[point]});
+ assert.equal(datum.status,'ready','Expected legitimate GDAL WGS84 CRS URN '+name);
+}
 assert.equal(ready.displayed,3);
 assert.equal(ready.totalKnown,3);
 assert.equal(ready.geometryCounts.point,1);
