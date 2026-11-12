@@ -26,7 +26,7 @@ function browserRSS(pid){
    }
    return false;
   };
-  return rows.filter(([id])=>childOf(id)).reduce((n,row)=>n+(row[2]||0),0);
+  return rows.filter(([id])=>id!==pid&&childOf(id)).reduce((n,row)=>n+(row[2]||0),0);
  }catch{return null}
 }
 try{
@@ -55,7 +55,7 @@ try{
  check(report.inputBytes>300000 && report.inputBytes<15*1048576,'Synthetic fixture size invalid');
  await page.goto(origin+'/converter/geojson-to-shp/',{waitUntil:'domcontentloaded'});
  await page.locator('#file').setInputFiles({name:'large-polygons.geojson',mimeType:'application/geo+json',buffer:Buffer.from(geojson)});
- const beforeHeap=await page.evaluate(()=>performance.memory?.usedJSHeapSize??null),pid=browser.process()?.pid;
+ const beforeHeap=await page.evaluate(()=>performance.memory?.usedJSHeapSize??null),pid=process.pid;
  let peak=0,memorySamples=0;
  const sample=()=>{const rss=browserRSS(pid);if(rss!==null){peak=Math.max(rss,peak);memorySamples++}};
  sample();tick=setInterval(sample,220);
@@ -67,7 +67,7 @@ try{
  clearInterval(tick);tick=null;sample();
  report.memory={chromiumProcessTreePeakRssKiB:peak||null,rssSampleCount:memorySamples,
    jsHeapBeforeBytes:beforeHeap,jsHeapAfterBytes:await page.evaluate(()=>performance.memory?.usedJSHeapSize??null),
-   caveat:'RSS is summed from Chromium processes on a GitHub CI runner and may double-count shared pages; JSHeapUsedSize excludes WASM linear memory.'};
+   caveat:'RSS is summed from descendants of the test process (Chromium plus helpers) on a GitHub CI runner and may double-count shared pages; JSHeapUsedSize excludes WASM linear memory.'};
  const qualityPromise=page.waitForEvent('download');
  await page.locator('#quality-download').click();
  const qualityDownload=await qualityPromise;
