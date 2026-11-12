@@ -434,6 +434,66 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {retainedAltitudeSamples:expected.length,reviewedTimestamps:true};
  });
 
+
+ const gpxP24='<?xml version="1.0" encoding="UTF-8"?>'+
+  '<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="P24 Timed QA">'+
+  '<wpt lat="39.9" lon="116.4"><name>P24 Start</name></wpt>'+
+  '<rte><name>P24 Route Untimed</name><rtept lat="39.8" lon="116.3"/>'+
+  '<rtept lat="39.81" lon="116.31"/></rte>'+
+  '<trk><name>P24 Fully Timed Track</name>'+
+  '<trkseg><trkpt lat="39.5" lon="116.1"><ele>101.5</ele><time>2026-11-12T01:00:00Z</time></trkpt>'+
+  '<trkpt lat="39.51" lon="116.11"><ele>102</ele><time>2026-11-12T01:00:05Z</time></trkpt></trkseg>'+
+  '<trkseg><trkpt lat="39.52" lon="116.12"><time>2026-11-12T01:00:10Z</time></trkpt>'+
+  '<trkpt lat="39.53" lon="116.13"><time>2026-11-12T01:00:15Z</time></trkpt></trkseg></trk>'+
+  '<trk><name>P24 Partial Time Track</name><trkseg>'+
+  '<trkpt lat="39.6" lon="116.2"><time>2026-11-12T02:00:00Z</time></trkpt>'+
+  '<trkpt lat="39.61" lon="116.21"/></trkseg></trk></gpx>';
+ async function verifyP24GxTrack(target){
+  const file=new File([gpxP24],'p24-real-timed.gpx');
+  const output=await convertGdal(gdal,file,'gpx',target);
+  let xml=new TextDecoder().decode(output.bytes);
+  if(target==='kmz'){
+   const zip=await JSZip.loadAsync(output.bytes);
+   xml=await zip.file('doc.kml')?.async('string');
+  }
+  assert(xml,'P24 KML body absent');
+  const tracks=[...xml.matchAll(/<gx:Track\b/g)],when=[...xml.matchAll(/<when>/g)];
+  const coords=[...xml.matchAll(/<gx:coord>/g)];
+  const lines=[...xml.matchAll(/<LineString\b/g)],places=[...xml.matchAll(/<Placemark\b/g)];
+  assert(tracks.length===2,'Expected 2 timed track segments, got '+tracks.length);
+  assert(when.length===4&&coords.length===4,'Track time and vertex arrays must match exactly');
+  assert(lines.length===2,'Route and partial-time track must remain ordinary KML lines, got '+lines.length);
+  assert(places.length===4,'P24 must not introduce duplicate standalone Placemarks');
+  assert(xml.includes('xmlns:gx="http://www.google.com/kml/ext/2.2"'),'Missing gx namespace');
+  assert(xml.includes('<gx:coord>116.1 39.5 101.5</gx:coord>'),'Source elevation not aligned with time track');
+  assert(xml.includes('2026-11-12T01:00:05.000Z'),'Track timestamps not emitted in canonical UTC');
+  const report=await createGISQualityReport(file,'gpx',output.bytes,target);
+  for(const id of ['gpx-logical-features','gpx-line-geometry','gpx-timed-track'])
+   assert(report.checks.find(c=>c.id===id)?.status==='pass','P24 independent check failed '+id+' '+JSON.stringify(report.checks));
+  assert(report.checks.find(c=>c.id==='gpx-vertex-metadata')?.status==='review',
+    'Partial time and non-timed metadata must remain under review');
+  assertNoDetectedCriticalDataLoss(report);
+  return {target,timedSegments:tracks.length,times:when.length,trackCoords:coords.length,
+    preservedUntimedLines:lines.length,logicalFeatures:places.length,checks:'pass'};
+ }
+ await mark('P24 real GDAL GPX to KML gx:Track paired timestamps with route and partial-time fallbacks',
+  ()=>verifyP24GxTrack('kml'));
+ await mark('P24 real GDAL GPX to KMZ gx:Track paired timestamps with route and partial-time fallbacks',
+  ()=>verifyP24GxTrack('kmz'));
+ await mark('P24 changing gx:Track time on an actual GDAL conversion blocks download',async()=>{
+  const file=new File([gpxP24],'p24-time-change.gpx');
+  const output=await convertGdal(gdal,file,'gpx','kml');
+  const xml=new TextDecoder().decode(output.bytes);
+  assert(xml.includes('2026-11-12T01:00:05.000Z'),'P24 baseline timed track missing');
+  const changed=new TextEncoder().encode(xml.replace('2026-11-12T01:00:05.000Z','2026-11-12T01:00:06.000Z'));
+  const quality=await createGISQualityReport(file,'gpx',changed,'kml');
+  assert(quality.checks.find(c=>c.id==='gpx-timed-track')?.status==='review',
+    'P24 independent audit failed to detect altered timestamp');
+  let blocked=false;try{assertNoDetectedCriticalDataLoss(quality)}catch(e){blocked=e.code==='DATA_LOSS'}
+  assert(blocked,'P24 altered timestamps did not block the generated file');
+  return {tamperedTimeBlocked:true};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
