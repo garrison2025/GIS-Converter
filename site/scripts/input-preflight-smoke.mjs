@@ -16,7 +16,7 @@ try{
  await page.waitForFunction(()=>document.body.dataset.done==='true',{timeout:40000});
  const tests=await page.evaluate(()=>window.__preflightResult);
  report.cases=tests.cases;report.pageErrors=runtimeErrors;
- if(tests.status!=='PASSED'||tests.cases.length!==29||runtimeErrors.length)
+ if(tests.status!=='PASSED'||tests.cases.length!==45||runtimeErrors.length)
   throw Error('Preflight checks failed: '+JSON.stringify(report));
  // Verify actual converter worker rejects a malformed KMZ before fetching the GDAL WASM.
  const upload=await browser.newPage();
@@ -28,6 +28,18 @@ try{
  const text=await upload.locator('#error').textContent();
  if(!text.includes('invalid ZIP')||requests.length)throw Error('Unsafe ZIP reached WASM runtime or wrong error: '+JSON.stringify({text,requests}));
  report.workerSafety={passed:true,reason:text,gdalWasmRequests:requests.length};
+ // A bad coordinate row must be rejected in the real conversion Worker before WASM loads.
+ await upload.goto(root+'/converter/csv-to-kml/');
+ await upload.locator('#file').setInputFiles({
+   name:'invalid-coordinate.csv',mimeType:'text/csv',
+   buffer:Buffer.from('longitude,latitude,name\n116.4,39.9,ok\n181,39.9,bad\n')
+ });
+ await upload.locator('#submit').click();
+ await upload.waitForFunction(()=>document.querySelector('#error')?.hidden===false,{timeout:20000});
+ const csvError=await upload.locator('#error').textContent();
+ if(!csvError.includes('longitude outside WGS84 bounds')||requests.length)
+   throw Error('Invalid CSV reached WASM or wrong error: '+JSON.stringify({csvError,requests}));
+ report.csvWorkerSafety={passed:true,reason:csvError,gdalWasmRequests:requests.length};
  report.status='PASSED';
 }catch(e){report.status='FAILED';report.error=String(e?.stack||e)}
 finally{writeFileSync('input-preflight-results.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser?.close();server.kill()}
