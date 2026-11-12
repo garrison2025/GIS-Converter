@@ -413,6 +413,27 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {retainedAltitudeSamples:expected.length,altitudeMode:'source GPX ele mapped to KML geometry Z',bytes:out.bytes.length};
  });
 
+
+ await mark('P23 GPX KMZ preserves unambiguous route track and waypoint elevations as KML Z',async()=>{
+  const source=new File([gpxP21],'p23-elevation-kmz.gpx');
+  const result=await convertGdal(gdal,source,'gpx','kmz');
+  const zip=await JSZip.loadAsync(result.bytes);
+  const kml=await zip.file('doc.kml')?.async('string');
+  assert(kml,'KMZ doc.kml unavailable');
+  const points=[...kml.matchAll(/<coordinates\b[^>]*>([^<]+)<\/coordinates>/gi)]
+    .flatMap(m=>m[1].trim().split(/\s+/).map(x=>x.split(',').map(Number)));
+  const expected=[[116.4,39.9,90.1],[116.3,39.8,120],[116.1,39.6,135.25]];
+  for(const p of expected)
+   assert(points.some(q=>q.length===3&&Math.abs(q[0]-p[0])<1e-6&&
+      Math.abs(q[1]-p[1])<1e-6&&Math.abs(q[2]-p[2])<.01),
+      'GPX source elevation missing from KMZ: '+p.join(','));
+  const quality=await createGISQualityReport(source,'gpx',result.bytes,'kmz');
+  assert(quality.checks.find(c=>c.id==='gpx-vertex-metadata')?.status==='review',
+    'GPX timestamp metadata still must require manual review');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {retainedAltitudeSamples:expected.length,reviewedTimestamps:true};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
