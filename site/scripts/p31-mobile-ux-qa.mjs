@@ -76,8 +76,9 @@ try{
   await page.keyboard.press('Enter');
   assert(await page.evaluate(()=>location.hash)==='#main-content',
    'Skip link should target main conversion content');
-  assert(await page.locator('#file').getAttribute('aria-describedby')==='file-info',
-   'File selector is not associated with file requirements');
+  const describedBy=(await page.locator('#file').getAttribute('aria-describedby')||'').split(/\s+/);
+  assert(describedBy.includes('file-info')&&describedBy.includes('batch-help'),
+   'File selector must describe both input requirements and mini-batch limits');
   await page.locator('#file').setInputFiles(fixture(kml(116.4,39.9,'Keyboard')));
   await page.locator('#submit').focus();
   await page.keyboard.press('Enter');
