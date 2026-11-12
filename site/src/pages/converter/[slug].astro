@@ -270,15 +270,18 @@ form?.addEventListener('submit',async(event)=>{
    activeTask=operation;
    output=await operation.promise;
   }else{
-   // Load ZIP packaging only for the optional multi-file workflow.
-   const {validateMiniBatchSelection,makeMiniBatchArchive,miniBatchSummary}=
-    await import('../../lib/mini-batch.mjs');
-   validateMiniBatchSelection(inputs);
+   // Register cancellation before loading the optional ZIP library so a
+   // slow first-load connection cannot ignore an early Cancel click.
    const batch={
     current:null,cancelled:false,
     cancel(){this.cancelled=true;this.current?.cancel();}
    };
    operation=batch;activeTask=batch;
+   // Load ZIP packaging only for the optional multi-file workflow.
+   const {validateMiniBatchSelection,makeMiniBatchArchive,miniBatchSummary}=
+    await import('../../lib/mini-batch.mjs');
+   if(batch.cancelled)throw Object.assign(new Error('Batch cancelled.'),{code:'CANCELLED'});
+   validateMiniBatchSelection(inputs);
    const outputs=[];
    for(let i=0;i<inputs.length;i++){
     if(batch.cancelled)throw Object.assign(new Error('Batch cancelled.'),{code:'CANCELLED'});
