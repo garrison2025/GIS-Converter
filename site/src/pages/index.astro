@@ -74,9 +74,9 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
   <div class="container">
    <p class="eyebrow">Private by design · GDAL-powered</p>
    <h1>Convert GIS files in your browser.</h1>
-   <p class="intro">Convert KML, KMZ, Shapefile, GeoJSON, GPX and CSV without uploading your data to a conversion server. Choose one of 19 format routes and download the result locally.</p>
-   <div class="herocta"><a href="#tools" class="primary">Explore 19 converters <span aria-hidden="true">→</span></a><span class="micro">No account required · 15 MiB input limit</span></div>
-   <div class="stats" aria-label="Product facts"><span class="chip">Files stay in your browser</span><span class="chip">GDAL/WebAssembly engine</span><span class="chip">19 conversion routes</span><span class="chip">{seo.indexable?'Free GIS tools':'Free engineering preview'}</span></div>
+   <p class="intro">Convert KML, KMZ, Shapefile, GeoJSON, GPX and CSV without uploading your data to a conversion server. Choose one of 19 format routes, convert one file or a free mini-batch of up to three files, and download the result locally.</p>
+   <div class="herocta"><a href="#tools" class="primary">Explore 19 converters <span aria-hidden="true">→</span></a><span class="micro">No account required · Up to 3 files per batch</span></div>
+   <div class="stats" aria-label="Product facts"><span class="chip">Files stay in your browser</span><span class="chip">GDAL/WebAssembly engine</span><span class="chip">19 conversion routes</span><span class="chip">Free 3-file mini-batch</span><span class="chip">{seo.indexable?'Free GIS tools':'Free engineering preview'}</span></div>
   </div>
  </section>
  <section id="tools" class="section container">
@@ -98,8 +98,8 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
   <div class="container"><h2>How it works</h2><p>GDAL runs in a dedicated background Web Worker in your browser; the file is not sent to a remote conversion service.</p>
   <div class="steps">
     <div class="step"><span class="num">1</span><h3>Choose the route</h3><p>Select the input and output formats your GIS workflow needs.</p></div>
-    <div class="step"><span class="num">2</span><h3>Upload locally</h3><p>Choose a valid GIS file. Large or suspicious archives are rejected before processing.</p></div>
-    <div class="step"><span class="num">3</span><h3>Review and download</h3><p>Save the result, then check coordinate reference system, geometry and properties.</p></div>
+    <div class="step"><span class="num">2</span><h3>Choose your files</h3><p>Select or drag one file, or up to three files in the free mini-batch. No data is uploaded to a server.</p></div>
+    <div class="step"><span class="num">3</span><h3>Review and download</h3><p>Download a single output or a batch ZIP with individual inspection reports. Check geometry, projection and attributes in GIS software.</p></div>
   </div></div>
  </section>
  <section id="formats" class="section container"><h2>Formats we support</h2><p class="intro">KML/KMZ are widely used with Google Earth; Shapefile is a multi-file GIS dataset; GeoJSON is a web mapping format; GPX is for GPS tracks and waypoints; CSV works best with longitude and latitude columns.</p>

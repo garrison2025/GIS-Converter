@@ -1,0 +1,50 @@
+name: GIS Converter P34 real public free 3-file mini-batch acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p34-public-mini-batch-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p34-public-batch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait until Cloudflare Pages exposes exact new merged P34 main commit
+        run: node scripts/p34-await-live-release.mjs
+      - name: Install exact locked app dependencies (no deploy)
+        run: npm ci --no-audit --no-fund
+      - name: Independently verify public release SHA and noindex preview policy
+        run: npm run smoke:live-release
+      - name: Install Chromium Firefox and WebKit for real public batch download tests
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run eleven real public GIS batch ZIP, nested SHP/KMZ, cancellation and drag-drop scenarios
+        run: npm run smoke:mini-batch-live
+      - name: Preserve all 19 basic single-file GIS conversion/download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Record browser ZIP quality evidence including failed cases
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p34-public-mini-batch-evidence
+          path: |
+            site/p34-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p34-mini-batch-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# This tests synthetic browser-local GIS files only; no Cloudflare deploy,
+# DNS/indexing/account changes, payment activation or database usage.

@@ -38,7 +38,10 @@
     "smoke:crossbrowser-local": "node scripts/p32-wrangler-crossbrowser-local.mjs",
     "smoke:crossbrowser-live": "node scripts/live-crossbrowser-qa.mjs",
     "smoke:native-local": "node scripts/p33-wrangler-native-local.mjs",
-    "smoke:native-live": "node scripts/p33-native-ogr-compat.mjs"
+    "smoke:native-live": "node scripts/p33-native-ogr-compat.mjs",
+    "smoke:mini-batch-unit": "node scripts/p34-mini-batch-unit.mjs",
+    "smoke:mini-batch-local": "node scripts/p34-mini-batch-local.mjs",
+    "smoke:mini-batch-live": "node scripts/p34-mini-batch-qa.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",

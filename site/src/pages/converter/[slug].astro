@@ -39,7 +39,10 @@ const label=formats[from].name+' to '+formats[to].name;
  .card{background:#fff;border:1px solid #dce7eb;border-radius:16px;padding:24px;box-shadow:0 5px 24px #1348610b}
  .card h2{margin:0 0 7px;font-size:20px;letter-spacing:-.025em}
  .card p{margin:6px 0 14px;color:#506b7b;font-size:14px}
- .uploadzone{border:1.5px dashed #9fc8c0;background:#f5fcfa;padding:18px 20px;border-radius:12px;margin:20px 0 15px}
+ .uploadzone{border:1.5px dashed #9fc8c0;background:#f5fcfa;padding:18px 20px;border-radius:12px;margin:20px 0 15px;transition:border-color .15s,background .15s}
+ .uploadzone[data-dragging="true"]{border-color:#08796d;background:#e1f6f0}
+ .batch-info{font-size:12px;color:#436a76;margin:10px 0 0!important}
+ .batch-info strong{color:#08796d}
  .uploadzone label{display:block;font-weight:700;margin-bottom:8px}
  input[type=file]{font:inherit;display:block;width:100%;color:#31546a;max-width:100%;font-size:14px}
  input[type=file]::file-selector-button{font:inherit;background:#fff;border:1px solid #bad0ca;color:#076e63;border-radius:8px;padding:8px 13px;margin-right:12px;font-weight:700;cursor:pointer}
@@ -94,15 +97,16 @@ const label=formats[from].name+' to '+formats[to].name;
  <p class="eyebrow">GDAL / WebAssembly · Local file processing</p>
  <h1>{label} — online file converter</h1>
  <p class="lead">{info.context}</p>
- <div class="meta"><span class="tag">{seo.indexable?'Free GIS converter':'Free test tool'}</span><span class="tag">15 MiB input limit</span><span class="tag">No file uploads to our servers</span></div>
+ <div class="meta"><span class="tag">{seo.indexable?'Free GIS converter':'Free test tool'}</span><span class="tag">Single file or up to 3 in a batch</span><span class="tag">15 MiB per file</span><span class="tag">No file uploads to our servers</span></div>
  <div class="grid">
  <div>
- <form id="converter" class="card" data-slug={slug} aria-label={label+' conversion form'}>
+ <form id="converter" class="card" data-slug={slug} data-target-name={info.target.name} aria-label={label+' conversion form'}>
   <h2>Convert your file</h2><p>Select your {info.source.name} file. The converter runs inside an isolated Web Worker in this browser.</p>
-  <div class="uploadzone">
-   <label for="file">Choose {info.source.name} input file</label>
-   <input id="file" name="file" type="file" accept={info.source.accept} aria-describedby="file-info" required/>
+  <div class="uploadzone" id="drop-zone">
+   <label for="file">Choose {info.source.name} input file(s)</label>
+   <input id="file" name="file" type="file" accept={info.source.accept} aria-describedby="file-info batch-help" multiple required/>
    <p class="small" id="file-info">{info.source.help}</p>
+   <p class="batch-info" id="batch-help"><strong>Free mini-batch:</strong> choose or drop up to 3 files of the same format (15 MiB each, 30 MiB combined). One file downloads normally; multiple files download together as a ZIP with individual quality reports. A failed file stops the entire batch.</p>
   </div>
   <div class="actions"><button id="submit" type="submit">Convert to {info.target.name} <span aria-hidden="true">→</span></button><button id="cancel" type="button" hidden>Cancel conversion</button></div>
   <p id="status" class="status" role="status" aria-live="polite">Ready to convert.</p>
@@ -173,20 +177,63 @@ const cancelButton=document.querySelector('#cancel');
 const selected=document.querySelector('#file-info');
 const placeholder=selected.textContent;
 let linkUrl=null,reportUrl=null,activeTask=null;
+const MAX_FILES=3;
+const MAX_FILE_BYTES=15*1024*1024;
+const MAX_BATCH_BYTES=30*1024*1024;
+const showSelectionError=message=>{
+ error.hidden=false;error.textContent=message;status.textContent='Review the selected files before converting.';
+};
+function selectionError(files){
+ if(files.length>MAX_FILES)return 'Choose no more than 3 files per mini-batch.';
+ if(files.some(f=>f.size<=0))return 'Empty input files cannot be converted.';
+ if(files.some(f=>f.size>MAX_FILE_BYTES))return 'Each input must be 15 MiB or smaller.';
+ if(files.reduce((total,f)=>total+f.size,0)>MAX_BATCH_BYTES)
+  return 'The combined input exceeds the 30 MiB mini-batch limit.';
+ return null;
+}
 file.addEventListener('change',()=>{
-  // The prior download/quality report belongs to the previous source file.
-  // Hide and revoke both immediately to prevent accidentally exporting
-  // stale results after a source replacement, even if the next file is invalid.
-  resetOutput();
-  error.hidden=true;error.textContent='';
-  status.textContent='Ready to convert.';
-  if(!file.files?.length){selected.textContent=placeholder;return}
-  const f=file.files[0];
-  selected.textContent=f.name+' · '+(f.size/1048576).toFixed(2)+' MiB selected (15 MiB maximum)';
-  if(f.size>15*1024*1024){
-    status.textContent='Selected file exceeds the 15 MiB input limit.';
-    error.hidden=false;error.textContent='Choose a smaller file (15 MiB maximum).';
-  }
+ resetOutput();
+ error.hidden=true;error.textContent='';
+ status.textContent='Ready to convert.';
+ const inputs=Array.from(file.files||[]);
+ if(!inputs.length){selected.textContent=placeholder;return}
+ if(inputs.length===1){
+  const one=inputs[0];
+  selected.textContent=one.name+' · '+(one.size/1048576).toFixed(2)+' MiB selected (15 MiB maximum)';
+ }else{
+  selected.textContent=inputs.length+' files selected · '+
+   (inputs.reduce((n,f)=>n+f.size,0)/1048576).toFixed(2)+' MiB total (30 MiB maximum)';
+ }
+ const issue=selectionError(inputs);
+ if(issue)showSelectionError(issue);
+});
+// The native file picker is keyboard accessible. Drag/drop is an additional
+// convenience; dropping files never triggers an automatic conversion.
+const dropZone=document.querySelector('#drop-zone');
+for(const eventName of ['dragenter','dragover']){
+ dropZone.addEventListener(eventName,event=>{
+  if(file.disabled||!event.dataTransfer?.types.includes('Files'))return;
+  event.preventDefault();
+  dropZone.dataset.dragging='true';
+  if(event.dataTransfer)event.dataTransfer.dropEffect='copy';
+ });
+}
+for(const eventName of ['dragleave','dragend']){
+ dropZone.addEventListener(eventName,event=>{
+  if(eventName==='dragleave'&&dropZone.contains(event.relatedTarget))return;
+  delete dropZone.dataset.dragging;
+ });
+}
+dropZone.addEventListener('drop',event=>{
+ if(!event.dataTransfer?.files?.length||file.disabled)return;
+ event.preventDefault();
+ delete dropZone.dataset.dragging;
+ try{
+  file.files=event.dataTransfer.files;
+  file.dispatchEvent(new Event('change',{bubbles:true}));
+ }catch{
+  showSelectionError('This browser cannot assign dropped files. Use the file picker instead.');
+ }
 });
 const resetOutput=()=>{
  if(linkUrl){URL.revokeObjectURL(linkUrl);linkUrl=null;}
@@ -199,59 +246,126 @@ const resetOutput=()=>{
 cancelButton.addEventListener('click',()=>activeTask?.cancel());
 form?.addEventListener('submit',async(event)=>{
  event.preventDefault();
- if(activeTask||!file.files?.[0])return;
- // Reset stale artifacts BEFORE rejecting an unsupported or oversized input.
+ if(activeTask||!file.files?.length)return;
  resetOutput();
  error.hidden=true;error.textContent='';
  const tuple=routes.find(r=>r[0]===form.dataset.slug);
- if(!tuple){error.hidden=false;error.textContent='Unsupported conversion';status.textContent='Unsupported conversion route.';return}
- if(file.files[0].size>15*1024*1024){error.hidden=false;error.textContent='The 15 MiB test file limit was exceeded.';status.textContent='Choose a smaller input file.';return}
- btn.disabled=true;file.disabled=true;cancelButton.hidden=false;form.setAttribute('aria-busy','true');
- error.hidden=true;status.textContent='Converting in an isolated Web Worker…';
- let task;
+ if(!tuple){
+  showSelectionError('Unsupported conversion route.');
+  return;
+ }
+ const inputs=Array.from(file.files);
+ const issue=selectionError(inputs);
+ if(issue){showSelectionError(issue);return;}
+ btn.disabled=true;file.disabled=true;cancelButton.hidden=false;
+ form.setAttribute('aria-busy','true');
+ status.textContent='Starting browser-local conversion…';
+ let operation;
  try{
-  task=runIsolatedConversion({file:file.files[0],source:tuple[1],target:tuple[2],timeoutMs:90000});
-  activeTask=task;
-  const output=await task.promise;
-  if(activeTask!==task)return;
+  let output;
+  if(inputs.length===1){
+   operation=runIsolatedConversion({
+    file:inputs[0],source:tuple[1],target:tuple[2],timeoutMs:90000
+   });
+   activeTask=operation;
+   output=await operation.promise;
+  }else{
+   // Register cancellation before loading the optional ZIP library so a
+   // slow first-load connection cannot ignore an early Cancel click.
+   const batch={
+    current:null,cancelled:false,
+    cancel(){this.cancelled=true;this.current?.cancel();}
+   };
+   operation=batch;activeTask=batch;
+   // Load ZIP packaging only for the optional multi-file workflow.
+   const {validateMiniBatchSelection,makeMiniBatchArchive,miniBatchSummary}=
+    await import('../../lib/mini-batch.mjs');
+   if(batch.cancelled)throw Object.assign(new Error('Batch cancelled.'),{code:'CANCELLED'});
+   validateMiniBatchSelection(inputs);
+   const outputs=[];
+   for(let i=0;i<inputs.length;i++){
+    if(batch.cancelled)throw Object.assign(new Error('Batch cancelled.'),{code:'CANCELLED'});
+    status.textContent='Converting file '+(i+1)+' of '+inputs.length+
+     ': '+inputs[i].name+' (locally in your browser)…';
+    const worker=runIsolatedConversion({
+     file:inputs[i],source:tuple[1],target:tuple[2],timeoutMs:90000
+    });
+    batch.current=worker;
+    try{outputs.push(await worker.promise)}
+    catch(e){
+     if(!batch.cancelled)e.message='File '+(i+1)+' ('+inputs[i].name+'): '+e.message;
+     throw e;
+    }finally{batch.current=null}
+   }
+   if(batch.cancelled)throw Object.assign(new Error('Batch cancelled.'),{code:'CANCELLED'});
+   status.textContent='Packaging '+inputs.length+' converted files and quality reports…';
+   const zipped=await makeMiniBatchArchive({
+    source:tuple[1],target:tuple[2],files:inputs,results:outputs,
+    isCancelled:()=>batch.cancelled
+   });
+   output={
+    ...zipped,
+    quality:miniBatchSummary(outputs,inputs.map(x=>x.name)),
+    warning:'Mini-batch ZIP includes '+inputs.length+
+      ' converted outputs, individual inspection reports and a manifest.'
+   };
+  }
+  if(activeTask!==operation)return;
   linkUrl=URL.createObjectURL(new Blob([output.bytes],{type:output.mime}));
-  const link=document.querySelector('#download');link.href=linkUrl;link.download=output.name;
-  document.querySelector('#details').textContent='Generated '+output.name+' ('+(output.bytes.byteLength/1024).toFixed(1)+' KiB).';
-  document.querySelector('#warning').textContent=(output.warning?output.warning+' ':'')+'Output has NOT been independently validated.';
-
+  const link=document.querySelector('#download');
+  link.href=linkUrl;link.download=output.name;
+  link.firstChild.textContent=inputs.length>1?'Download batch ZIP ':'Download '+document.querySelector('#converter').dataset.targetName+' ';
+  document.querySelector('#details').textContent=inputs.length>1?
+   inputs.length+' files converted into '+output.name+
+    ' ('+(output.bytes.byteLength/1024).toFixed(1)+' KiB).':
+   'Generated '+output.name+' ('+(output.bytes.byteLength/1024).toFixed(1)+' KiB).';
+  document.querySelector('#warning').textContent=
+   (output.warning?output.warning+' ':'')+
+   'Output has NOT been independently validated.';
   const quality=output.quality;
   if(quality&&Array.isArray(quality.checks)){
-    const view=document.querySelector('#quality'),list=document.querySelector('#quality-checks');
-    list.replaceChildren();
-    const countIn=quality.input?.features,countOut=quality.output?.features;
-    const part=(n)=>Number.isInteger(n)?n.toLocaleString():'not fully inspected';
-    document.querySelector('#quality-summary').textContent=
-      'Input features: '+part(countIn)+' · Output features: '+part(countOut)+
-      ' · Review status: '+(quality.status==='review'?'Issues found':quality.status==='checked'?'Checks passed':'Limited inspection');
-    for(const check of quality.checks){
-      const item=document.createElement('li');
-      const label=check.status==='pass'?'✓':check.status==='review'?'⚠':'—';
-      item.textContent=label+' '+check.detail;
-      list.appendChild(item);
-    }
-    view.dataset.status=quality.status;
-    reportUrl=URL.createObjectURL(new Blob([JSON.stringify(quality,null,2)],{type:'application/json'}));
-    const qa=document.querySelector('#quality-download');
-    qa.href=reportUrl;qa.download='gis-quality-'+form.dataset.slug+'.json';
-    view.hidden=false;
+   const view=document.querySelector('#quality'),list=document.querySelector('#quality-checks');
+   list.replaceChildren();
+   const countIn=quality.input?.features,countOut=quality.output?.features;
+   const part=n=>Number.isInteger(n)?n.toLocaleString():'not fully inspected';
+   document.querySelector('#quality-summary').textContent=
+    'Input features: '+part(countIn)+' · Output features: '+part(countOut)+
+    ' · Review status: '+(quality.status==='review'?'Issues found':
+     quality.status==='checked'?'Checks passed':'Limited inspection');
+   for(const check of quality.checks){
+    const item=document.createElement('li');
+    const label=check.status==='pass'?'✓':check.status==='review'?'⚠':'—';
+    item.textContent=label+' '+check.detail;
+    list.appendChild(item);
+   }
+   view.dataset.status=quality.status;
+   reportUrl=URL.createObjectURL(new Blob([JSON.stringify(quality,null,2)],
+    {type:'application/json'}));
+   const qa=document.querySelector('#quality-download');
+   qa.href=reportUrl;
+   qa.download=inputs.length>1?'gis-mini-batch-summary.json':
+    'gis-quality-'+form.dataset.slug+'.json';
+   view.hidden=false;
   }
-
-  result.hidden=false;status.textContent='Conversion completed; verify output in GIS software.';
-  // Move keyboard focus to the newly revealed result without auto-starting
-  // a download. Screen readers can then inspect warnings and quality checks.
+  result.hidden=false;
+  status.textContent=inputs.length>1?
+   'Mini-batch complete. Verify all files inside the ZIP in GIS software.':
+   'Conversion completed; verify output in GIS software.';
   result.focus({preventScroll:true});
  }catch(e){
-  if(task&&activeTask!==task)return;
-  if(e?.code==='CANCELLED'){status.textContent='Conversion cancelled. You may retry.'}
-  else{error.hidden=false;error.textContent='Conversion failed: '+(e instanceof Error?e.message:String(e));status.textContent=e?.code==='TIMEOUT'?'Timed out. You may retry.':'Failed. You may retry.'}
+  if(operation&&activeTask!==operation)return;
+  if(e?.code==='CANCELLED'){
+   status.textContent='Conversion cancelled. You may retry.';
+  }else{
+   error.hidden=false;
+   error.textContent='Conversion failed: '+(e instanceof Error?e.message:String(e));
+   status.textContent=e?.code==='TIMEOUT'?'Timed out. You may retry.':
+    'Failed. You may retry.';
+  }
  }finally{
-  if(!task||activeTask===task){
-   activeTask=null;btn.disabled=false;file.disabled=false;cancelButton.hidden=true;form.removeAttribute('aria-busy');
+  if(!operation||activeTask===operation){
+   activeTask=null;btn.disabled=false;file.disabled=false;
+   cancelButton.hidden=true;form.removeAttribute('aria-busy');
   }
  }
 });
