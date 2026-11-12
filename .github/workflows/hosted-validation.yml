@@ -101,6 +101,42 @@ jobs:
             site/p32-crossbrowser-local-results.json
             site/package-lock.json
           if-no-files-found: warn
+  native-ogr-desktop:
+    name: P33 independent native GDAL/OGR desktop-reader compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install native desktop GDAL utilities, not the website GDAL WASM runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gdal-bin
+          ogrinfo --version
+          ogr2ogr --version
+      - name: Install locked site and Chromium browser dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Build real Cloudflare Pages gzip-function artifact in noindex preview mode
+        run: npm run build:pages
+      - name: Native OGR independently read six browser downloads and generate projected SHP input
+        run: npm run smoke:native-local
+      - name: Preserve native desktop GIS interoperability evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p33-native-ogr-desktop-compatibility
+          path: |
+            site/p33-native-local-preflight.json
+            site/p33-native-local-results.json
+            site/dist/release.json
+          if-no-files-found: warn
   seo-activation-dry-run:
     name: P30 isolated custom-domain SEO build rehearsal (never deployed)
     runs-on: ubuntu-latest
