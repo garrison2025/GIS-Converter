@@ -715,6 +715,21 @@ await test('P25 6000-point dense GPS track stays within bounded local time verif
  assert.equal([...xml.matchAll(/<when>/g)].length,6000);
 });
 
+await test('P25 partially upgraded timed GPX segments cannot earn a blanket pass',async()=>{
+ const original=new TextDecoder().decode(enhanceGpxTimedKml(buf(p24Source),buf(p24Kml)).bytes);
+ const blocks=[...original.matchAll(/<gx:Track>[\s\S]*?<\/gx:Track>/g)];
+ assert.equal(blocks.length,2);
+ const partial=original.replace(blocks[1][0],
+  '<LineString><coordinates>116.12,39.52 116.13,39.53</coordinates></LineString>');
+ const direct=inspectGpxTimedKml(p24Source,partial);
+ assert.equal(direct.status,'unavailable');
+ assert(direct.detail.includes('1 independently eligible'));
+ const report=await createGISQualityReport(makeFile(p24Source,'partial-timed.gpx'),'gpx',buf(partial),'kml');
+ assert.equal(check(report,'gpx-line-geometry').status,'pass');
+ assert.equal(check(report,'gpx-timed-track').status,'unavailable');
+ assert.equal(assertNoDetectedCriticalDataLoss(report),true);
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
