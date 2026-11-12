@@ -109,6 +109,7 @@ export function renderConvertedPreview(root,entries){
   fileSelect.appendChild(option);
  });
  const previewBody=el('div','preview-body');
+ previewBody.id='preview-body';
  root.appendChild(controls);
  if(entries.length>1){controls.appendChild(fileLabel);controls.appendChild(fileSelect)}
  root.appendChild(previewBody);
