@@ -5,7 +5,7 @@
 After a successful conversion, the result area contains a **geographic vector preview** below the existing file download and independent structural quality report. The implementation does not call map tiles, geocoding, analytics endpoints or a GIS conversion server. All source files, generated vector preview features and inspected attribute values remain in the **user's browser**.
 
 - **GeoJSON outputs** are read directly from the **converted GeoJSON bytes**.
-- **Shapefile ZIP, KML, KMZ, GPX and CSV outputs** are reopened in the **already running GDAL/WebAssembly Worker** and rendered to a bounded WGS84 GeoJSON sample. The preview is drawn *from the generated file*, not from the original uploaded file.
+- **Shapefile ZIP, KML, KMZ, GPX and CSV outputs** are read directly from the **generated output bytes** by bounded, format-specific browser-only parsers in the same isolated Worker. There is **no second GDAL conversion**, avoiding accidental delays or timeouts for a successful file export. The preview is drawn *from the generated file*, not the original uploaded file.
 - Points, lines, polygons (including interior holes) and Multi* counterparts display in an SVG schematic using longitude/latitude. A user can select a feature and inspect up to six scalar attributes. Attributes are inserted with `textContent` and never parsed as HTML.
 - **Two- or three-file free mini-batches** have a local file picker in the preview panel; each selected file shows its own visual sample and properties. The downloadable batch ZIP and per-file quality reports remain unchanged.
 - Choosing another input clears the old SVG and attributes immediately, just as P31 clears the previous Blob download links. A malformed source never reveals a stale preview.
@@ -25,7 +25,7 @@ After a successful conversion, the result area contains a **geographic vector pr
 | Antimeridian | Shows a caution when longitude span exceeds 180°, does **not** unwrap lines or rings |
 | Large input/output or failed sample | Preview reports **unavailable**. Valid converted output and quality report remain downloadable |
 | Interactive attribute fields | Up to six safe primitive values per displayed feature, 48 characters per key and 120 per value; no HTML interpolation |
-| Security | No map tile URLs, API keys, uploaded files on a server, new databases or paid services |
+| Security | No map tile URLs, API keys, uploaded files on a server, new databases or paid services; output ZIP parsing is bounded, projection declarations checked and SVG text is never interpreted as HTML |
 
 Feature counts shown for GDAL readback are explicitly **sample counts**, not a statement of complete GIS feature coverage. Some formats (especially GPX track timing, CSV schemas and invalid/unsupported geographic layers) may not yield a safe schematic even though the underlying conversion succeeds. The quality report and file downloads are always separate.
 
