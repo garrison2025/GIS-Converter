@@ -168,8 +168,12 @@ await test('GPX logical waypoints routes and tracks count excludes auxiliary tra
  const gpx='<gpx version="1.1"><wpt lon="116.4" lat="39.9"/><wpt lon="116.5" lat="39.8"/>'+
   '<rte><name>Route One</name><rtept lon="116.6" lat="39.8"/><rtept lon="116.7" lat="39.9"/></rte>'+
   '<trk><name>Track One</name><trkseg><trkpt lon="116.8" lat="40.0"/><trkpt lon="116.9" lat="40.1"/></trkseg></trk></gpx>';
- const kml='<kml><Document>'+Array.from({length:4},(_,i)=>'<Placemark><name>Test '+i+
-   '</name><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>').join('')+'</Document></kml>';
+ const kml='<kml><Document>'+
+ '<Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+ '<Placemark><Point><coordinates>116.5,39.8</coordinates></Point></Placemark>'+
+ '<Placemark><LineString><coordinates>116.6,39.8 116.7,39.9</coordinates></LineString></Placemark>'+
+ '<Placemark><LineString><coordinates>116.8,40.0 116.9,40.1</coordinates></LineString></Placemark>'+
+ '</Document></kml>';
  const r=await createGISQualityReport(makeFile(gpx,'complex.gpx'),'gpx',buf(kml),'kml');
  assert.deepEqual(r.input.gpxTypes,{waypoints:2,routes:1,tracks:1});
  assert.equal(r.input.gpxLogicalFeatures,4);
