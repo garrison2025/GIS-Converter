@@ -25,7 +25,8 @@ async function collect(gdal,path){
 export async function convertGdal(gdal,input,src,dst){
  if(!types[dst]||!types[src])throw Error('Unsupported GIS format');
  if(input.size>15*1024*1024)throw Error('Input exceeds the 15 MiB test limit');
- const openOptions=src==='csv'?['X_POSSIBLE_NAMES=longitude,lon,x','Y_POSSIBLE_NAMES=latitude,lat,y']:[];
+ const openOptions=src==='csv'?['X_POSSIBLE_NAMES=longitude,lon,x','Y_POSSIBLE_NAMES=latitude,lat,y']:
+  src==='gpx'?['ELE_AS_25D=YES']:[];
  const opened=await gdal.open(input,openOptions,['shp','kmz'].includes(src)?['vsizip']:[]);
  const ds=opened.datasets?.[0];if(!ds)throw Error('GDAL could not open '+src+': '+JSON.stringify(opened.errors||[]));
  let files;
