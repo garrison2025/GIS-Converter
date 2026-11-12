@@ -1,67 +1,221 @@
+/**
+ * P32: three real browser engines (Chromium, Firefox and WebKit) plus an
+ * emulated iPhone WebKit viewport. Actual user-facing GDAL/WebAssembly
+ * conversions and downloads, not a mock engine or an HTML-only smoke.
+ *
+ * This can run on local Wrangler Pages with compressed WASM or the real
+ * public Pages origin. It never uploads files to a conversion backend.
+ */
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import {chromium,firefox,webkit,devices} from 'playwright';
-const origin='https://gis-converter.pages.dev';
-const report={checkedAt:new Date().toISOString(),origin,status:'RUNNING',engines:[],errors:[]};
-const KML='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Cross-browser</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
-function assert(v,m){if(!v)throw Error(m)}
-for(const [name,launcher,ctxOpts] of [
-  ['Chromium desktop',chromium,{viewport:{width:1280,height:720},acceptDownloads:true}],
-  ['Firefox desktop',firefox,{viewport:{width:1280,height:720},acceptDownloads:true}],
-  ['WebKit mobile iPhone 13',webkit,{...devices['iPhone 13'],acceptDownloads:true}]
-]){
- const engine={name,status:'RUNNING',browserErrors:[],httpFailures:[],workerStarted:0,workerTerminated:0};
- report.engines.push(engine);
- let browser;
+import JSZip from 'jszip';
+
+const origin=(process.env.GIS_BASE_URL||'https://gis-converter.pages.dev').replace(/\/+$/,'');
+const local=/^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
+const evidencePath=process.env.GIS_CROSSBROWSER_REPORT||
+  (local?'p32-crossbrowser-local-results.json':'p32-crossbrowser-live-results.json');
+const report={kind:'p32-real-crossbrowser-gdal',source:local?'local-wrangler-pages':'public-cloudflare-pages',
+ origin,startedAt:new Date().toISOString(),status:'FAILED',engines:[],failures:[]};
+const kml=(lon,lat,title)=>'<?xml version="1.0" encoding="UTF-8"?>'+
+ '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>'+
+ title+'</name><Point><coordinates>'+lon+','+lat+',0</coordinates></Point></Placemark></Document></kml>';
+const asFile=(value,name)=>({name,mimeType:'application/vnd.google-earth.kml+xml',
+ buffer:Buffer.from(value)});
+const csv=Buffer.from('longitude,latitude,Name\n116.4,39.9,Firefox-WebKit\n');
+const sha256=bytes=>createHash('sha256').update(bytes).digest('hex');
+const assert=(value,message)=>{if(!value)throw Error(message)};
+const browserCases=[
+ {name:'Chromium desktop',browser:chromium,options:{viewport:{width:1280,height:800}}},
+ {name:'Firefox desktop',browser:firefox,options:{viewport:{width:1280,height:800}}},
+ {name:'WebKit desktop',browser:webkit,options:{viewport:{width:1280,height:800}}},
+ {name:'WebKit emulated iPhone 13',browser:webkit,options:{...devices['iPhone 13']}}
+];
+async function download(page,selector,suffix){
+ const [dl]=await Promise.all([page.waitForEvent('download',{timeout:20000}),
+  page.locator(selector).click()]);
+ assert(dl.suggestedFilename().endsWith(suffix),
+  'Downloaded unexpected extension '+dl.suggestedFilename());
+ const bytes=fs.readFileSync(await dl.path());
+ assert(bytes.length>40,'Downloaded result is empty');
+ return {name:dl.suggestedFilename(),bytes};
+}
+async function successfulConversion(page,fixture,route,ext){
+ const nav=await page.goto(origin+'/converter/'+route+'/',{waitUntil:'domcontentloaded',timeout:45000});
+ assert(nav?.ok(),'Conversion page was not available '+route);
+ await page.locator('#file').setInputFiles(fixture);
+ await page.locator('#submit').click();
+ try{await page.locator('#result').waitFor({state:'visible',timeout:120000})}
+ catch{throw Error(route+' failed: '+(await page.locator('#status').textContent())+' / '+
+   (await page.locator('#error').textContent()))}
+ const data=await download(page,'#download',ext);
+ const quality=await download(page,'#quality-download','.json');
+ const parsed=JSON.parse(quality.bytes.toString('utf8'));
+ assert(parsed.kind==='local-structural-quality-report',
+   'No independent local structural quality report');
+ return {data,quality:parsed};
+}
+for(const browserCase of browserCases){
+ const entry={engine:browserCase.name,status:'FAILED',browserErrors:[],
+  failedResponses:[],checks:[]};
+ report.engines.push(entry);
+ let browser,context;
  try{
-  browser=await launcher.launch({headless:true});
-  const ctx=await browser.newContext(ctxOpts);
-  const page=await ctx.newPage();
-  page.on('pageerror',err=>engine.browserErrors.push(String(err)));
-  page.on('response',res=>{if(res.url().startsWith(origin)&&res.status()>=400)engine.httpFailures.push({status:res.status(),url:res.url()})});
-  await page.addInitScript(()=>{
-    const Native=window.Worker;
-    window.__qaCreated=0;window.__qaEnded=0;
-    window.Worker=class extends Native{
-      constructor(...args){super(...args);window.__qaCreated++}
-      terminate(){window.__qaEnded++;return super.terminate()}
-    };
+  browser=await browserCase.browser.launch({headless:true});
+  context=await browser.newContext({...browserCase.options,acceptDownloads:true});
+  const page=await context.newPage();
+  page.on('pageerror',error=>entry.browserErrors.push(String(error)));
+  page.on('response',r=>{
+   if(r.url().startsWith(origin)&&r.status()>=400&&
+     /(?:\/engine\/|\/_astro\/|\/converter\/)/.test(r.url()))
+    entry.failedResponses.push({status:r.status(),url:r.url().slice(0,180)});
   });
-  const response=await page.goto(origin+'/converter/kml-to-geojson/',{waitUntil:'domcontentloaded',timeout:45000});
-  assert(response.ok(),'Live page unavailable '+response.status());
-  engine.noindex=(await page.locator('meta[name="robots"]').getAttribute('content')).includes('noindex');
-  assert(engine.noindex,'Missing noindex');
-  engine.viewportWidth=await page.evaluate(()=>window.innerWidth);
-  engine.scrollWidth=await page.evaluate(()=>document.documentElement.scrollWidth);
-  assert(engine.scrollWidth<=engine.viewportWidth+2,'Horizontal overflow '+engine.viewportWidth+' vs '+engine.scrollWidth);
-  assert((await page.locator('h1').textContent()).includes('online file converter'),'New tool UI not deployed');
-  await page.locator('#file').setInputFiles({name:'cross.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:Buffer.from(KML)});
-  assert((await page.locator('#file-info').textContent()).includes('MiB selected'),'File summary not shown');
-  const start=Date.now();await page.locator('#submit').click();
-  try{await page.locator('#result').waitFor({state:'visible',timeout:90000})}
-  catch{throw Error('Conversion failure: '+(await page.locator('#error').textContent())+'; status='+(await page.locator('#status').textContent()))}
-  const wait=page.waitForEvent('download',{timeout:15000});
-  await page.locator('#download').click();
-  const dl=await wait;
-  assert(dl.suggestedFilename().endsWith('.geojson'),'Unexpected extension');
-  const bytes=fs.readFileSync(await dl.path()),json=JSON.parse(bytes.toString());
-  const coords=json.features?.[0]?.geometry?.coordinates;
-  assert(json.type==='FeatureCollection'&&json.features.length===1,'Bad GeoJSON features');
-  assert(Math.abs(coords[0]-116.4)<.0001 && Math.abs(coords[1]-39.9)<.0001,'Coordinates drift');
-  const workers=await page.evaluate(()=>({created:window.__qaCreated,terminated:window.__qaEnded}));
-  assert(workers.created===1&&workers.terminated===1,'Worker lifecycle invalid '+JSON.stringify(workers));
-  engine.workers=workers;
-  engine.outputBytes=bytes.length;
-  engine.coordinates=coords;
-  engine.conversionElapsedMs=Date.now()-start;
-  assert(engine.browserErrors.length===0,'Uncaught errors '+engine.browserErrors.join(';'));
-  assert(engine.httpFailures.length===0,'HTTP failures '+JSON.stringify(engine.httpFailures));
-  engine.status='PASSED';
- }catch(e){engine.status='FAILED';engine.error=String(e?.stack||e);report.errors.push(name+': '+engine.error)}
- finally{await browser?.close()}
- console.log('BROWSER '+name+' '+engine.status+' '+(engine.error||''));
+  await page.addInitScript(()=>{
+   const OriginalWorker=window.Worker;
+   window.__p32Workers={created:0,terminated:0};
+   window.Worker=class extends OriginalWorker{
+    constructor(...args){super(...args);window.__p32Workers.created++}
+    terminate(){window.__p32Workers.terminated++;return super.terminate()}
+   };
+   const rawCreate=URL.createObjectURL.bind(URL);
+   const rawRevoke=URL.revokeObjectURL.bind(URL);
+   window.__p32Blobs={created:[],revoked:[]};
+   URL.createObjectURL=(data)=>{
+    const value=rawCreate(data);
+    window.__p32Blobs.created.push(value);
+    return value;
+   };
+   URL.revokeObjectURL=(value)=>{
+    window.__p32Blobs.revoked.push(value);
+    return rawRevoke(value);
+   };
+  });
+
+  const home=await page.goto(origin+'/',{waitUntil:'domcontentloaded',timeout:45000});
+  assert(home?.ok(),'Public homepage is not accessible');
+  assert(await page.locator('a.tool').count()===19,'Missing 19 conversion tool cards');
+  assert((await page.locator('meta[name="robots"]').getAttribute('content'))==='noindex,nofollow',
+   'Engineering preview incorrectly indexable');
+  const homepageBox=await page.evaluate(()=>({
+    viewport:window.innerWidth,width:document.documentElement.scrollWidth}));
+  assert(homepageBox.width<=homepageBox.viewport+2,
+   'Homepage overflows '+JSON.stringify(homepageBox));
+  const search=page.locator('#filter');
+  await search.fill('kmz-to-shp');
+  assert(await page.locator('a.tool:visible').count()===1,
+   'Homepage accessible tool filter is not functional');
+  await search.fill('');
+  assert(await page.locator('a.tool:visible').count()===19,
+   'Clearing tool filter did not restore all 19 routes');
+  entry.checks.push('homepage-19-links-filter-mobile-layout-noindex');
+
+  const nav=await page.goto(origin+'/converter/kml-to-geojson/',{
+   waitUntil:'domcontentloaded',timeout:45000});
+  assert(nav?.ok(),'KML converter is not available');
+  const box=await page.evaluate(()=>({
+   viewport:window.innerWidth,width:document.documentElement.scrollWidth}));
+  assert(box.width<=box.viewport+2,'Converter has horizontal overflow '+JSON.stringify(box));
+  assert(await page.locator('a.skip-link').count()===1,'Missing keyboard skip link');
+  assert((await page.locator('#file').getAttribute('aria-describedby'))==='file-info',
+   'File selector not associated with its requirements');
+  assert((await page.locator('meta[name="robots"]').getAttribute('content'))==='noindex,nofollow',
+   'Converter lost preview noindex');
+  entry.checks.push('converter-responsive-accessible-input-noindex');
+
+  await page.locator('#file').setInputFiles(asFile(kml(116.4,39.9,'First'),'one.kml'));
+  await page.locator('#submit').click();
+  try{await page.locator('#result').waitFor({state:'visible',timeout:120000})}
+  catch{throw Error('First KML-to-GeoJSON conversion failed '+await page.locator('#error').textContent()+
+    ' / '+await page.locator('#status').textContent())}
+  assert(await page.evaluate(()=>document.activeElement?.id)==='result',
+   'Result focus was not moved to newly available download');
+  const first=await download(page,'#download','.geojson');
+  const firstJSON=JSON.parse(first.bytes.toString('utf8'));
+  assert(firstJSON.type==='FeatureCollection'&&firstJSON.features?.length===1,
+   'Browser downloaded an invalid GeoJSON FeatureCollection');
+  const firstCoords=firstJSON.features[0].geometry?.coordinates;
+  assert(Math.abs(firstCoords[0]-116.4)<.0001&&Math.abs(firstCoords[1]-39.9)<.0001,
+   'Browser GIS conversion changed the source point coordinates');
+  const qa=await download(page,'#quality-download','.json');
+  const quality=JSON.parse(qa.bytes.toString('utf8'));
+  assert(quality.kind==='local-structural-quality-report','GIS output QA JSON invalid');
+  const createdUrls=await page.evaluate(()=>({
+    output:document.querySelector('#download').href,
+    quality:document.querySelector('#quality-download').href,
+    created:window.__p32Blobs.created.slice()
+  }));
+  assert(createdUrls.output.startsWith('blob:')&&createdUrls.quality.startsWith('blob:'),
+   'Browser output and QA report were not downloadable Blob URLs');
+  entry.checks.push('real-kml-gdal-worker-geojson-qa-blob-download');
+  entry.firstDownload={bytes:first.bytes.length,sha256:sha256(first.bytes),qualityDownloaded:true};
+
+  // Changing the file must make the previous generated result inaccessible,
+  // including browsers with different Blob URL handling and download behavior.
+  await page.locator('#file').setInputFiles(asFile('INVALID KML DATA','bad.kml'));
+  assert(await page.locator('#result').isHidden(),'Output from previous input is still visible');
+  assert((await page.locator('#download').getAttribute('href'))===null,
+   'Old output download link was not removed');
+  assert((await page.locator('#quality-download').getAttribute('href'))===null,
+   'Old quality report download link was not removed');
+  const revoked=await page.evaluate(()=>window.__p32Blobs.revoked.slice());
+  assert(revoked.includes(createdUrls.output)&&revoked.includes(createdUrls.quality),
+   'Browser did not revoke old output and quality Blob URLs');
+  await page.locator('#submit').click();
+  await page.waitForFunction(()=>document.querySelector('#error')?.hidden===false,
+   {timeout:90000});
+  assert(await page.locator('#result').isHidden(),'Invalid input had an exposed result');
+  assert(await page.locator('#submit').isEnabled(),'Conversion failure left form disabled');
+  entry.checks.push('invalid-input-error-no-stale-download-recoverable');
+
+  await page.locator('#file').setInputFiles(asFile(kml(114.1,22.5,'Retry'),'retry.kml'));
+  assert(await page.locator('#error').isHidden(),'Old validation error not reset after selecting new file');
+  await page.locator('#submit').click();
+  try{await page.locator('#result').waitFor({state:'visible',timeout:120000})}
+  catch{throw Error('Browser worker failed to recover from invalid GIS file: '+
+   await page.locator('#error').textContent())}
+  const retry=await download(page,'#download','.geojson');
+  const retryJSON=JSON.parse(retry.bytes.toString('utf8'));
+  const newPoint=retryJSON.features?.[0]?.geometry?.coordinates;
+  assert(Math.abs(newPoint?.[0]-114.1)<.0001&&Math.abs(newPoint?.[1]-22.5)<.0001,
+   'After error the browser downloaded the old geometry, not the new file');
+  const workers=await page.evaluate(()=>window.__p32Workers);
+  assert(workers.created===3&&workers.terminated===3,
+   'Conversion worker leaked or was not terminated '+JSON.stringify(workers));
+  entry.checks.push('retry-after-failure-new-data-worker-termination');
+  entry.retryDownload={bytes:retry.bytes.length,sha256:sha256(retry.bytes),workers};
+
+  const converted=await successfulConversion(page,
+   {name:'coordinates.csv',mimeType:'text/csv',buffer:csv},'csv-to-kmz','.kmz');
+  const archive=await JSZip.loadAsync(converted.data.bytes);
+  assert(archive.file('doc.kml'),'KMZ does not contain expected doc.kml');
+  const embedded=await archive.file('doc.kml').async('string');
+  assert(embedded.includes('116.4,39.9')||/<coordinates>116\.4[0-9]*,39\.9/.test(embedded),
+   'Downloaded KMZ KML lost the original geographic point');
+  entry.checks.push('actual-csv-to-kmz-zip-download-extract');
+  entry.kmzDownload={bytes:converted.data.bytes.length,sha256:sha256(converted.data.bytes)};
+
+  assert(entry.browserErrors.length===0,
+   'Uncaught '+browserCase.name+' JS errors '+entry.browserErrors.join(';'));
+  assert(entry.failedResponses.length===0,
+   'Public Pages HTTP asset failures '+JSON.stringify(entry.failedResponses));
+  entry.status='PASSED';
+ }catch(e){
+  entry.error=String(e?.stack||e).slice(0,4500);
+  report.failures.push(browserCase.name);
+ }finally{
+  await context?.close().catch(()=>{});
+  await browser?.close().catch(()=>{});
+ }
+ console.log('P32_BROWSER '+browserCase.name+' '+entry.status+' '+
+  (entry.error||entry.checks.join(',')));
 }
 report.passed=report.engines.filter(e=>e.status==='PASSED').length;
-report.status=report.passed===report.engines.length?'PASSED':'FAILED';
-fs.writeFileSync('live-crossbrowser-qa.json',JSON.stringify(report,null,2));
-console.log('CROSS_BROWSER_SUMMARY '+JSON.stringify({status:report.status,passed:report.passed,failures:report.errors}));
+report.expected=browserCases.length;
+report.status=report.passed===report.expected?'PASSED':'FAILED';
+report.finishedAt=new Date().toISOString();
+fs.writeFileSync(evidencePath,JSON.stringify(report,null,2));
+console.log('P32_CROSS_BROWSER_SUMMARY '+JSON.stringify({
+ status:report.status,passed:report.passed,expected:report.expected,
+ failed:report.failures,source:report.source
+}));
 if(report.status!=='PASSED')process.exitCode=1;
