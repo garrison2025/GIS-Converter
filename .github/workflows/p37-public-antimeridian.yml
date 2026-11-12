@@ -1,0 +1,49 @@
+name: GIS Converter P37 antimeridian public preview acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p37-antimeridian-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p37-public-antimeridian:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact merged P37 SHA on public Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned dependencies and Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Verify deployed release and noindex engineering-preview gate
+        run: npm run smoke:live-release
+      - name: Verify 13 real-browser converted-output previews including P37 dateline case
+        run: npm run smoke:preview-live
+      - name: Recheck 19 public GIS conversion routes and real downloads
+        run: node scripts/live-all-routes.mjs
+      - name: Preserve public release/preview/route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p37-public-antimeridian-evidence
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p35-preview-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Tests only. No maps/tile requests, third-party input uploads or billing writes.

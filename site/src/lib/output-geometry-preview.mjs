@@ -5,6 +5,7 @@
  * topology, exact scale, CRS, DBF attribute preservation or full coverage.
  * Only the first 60 features and at most 3,000 XY vertices are displayed.
  */
+import {makeAntimeridianDisplayFrame} from './antimeridian-preview.mjs';
 export const PREVIEW_MAX_FEATURES=60;
 export const PREVIEW_MAX_VERTICES=3000;
 const MAX_PROPERTIES=6,MAX_VALUE=120;
@@ -83,16 +84,23 @@ export function makeOutputGeometryPreview(raw,{source='converted-output'}={}){
   }
   if(!features.length)return unavailable('No supported point, line or polygon geometry was available to preview.');
   if(!stats.bbox.every(Number.isFinite))return unavailable('No finite WGS84 coordinates available.');
-  const crossesDateline=stats.bbox[2]-stats.bbox[0]>180;
+  // Keep original WGS84 coordinates/bbox for download context and attributes.
+  // Only the SVG view receives a shifted drawing frame when safely possible.
+  const frame=makeAntimeridianDisplayFrame(features,stats.bbox);
+  if(frame.status==='unavailable')return unavailable(frame.reason);
+  if(frame.status==='wrapped')features.forEach((feature,i)=>{
+   feature.displayCoordinates=frame.displayCoordinates[i];
+  });
   return {
    status:'ready',kind:'gis-local-schematic-output-sample',source,
+   ...(frame.status==='wrapped'?{antimeridianView:true,displayBbox:frame.displayBbox}:{}),
    displayed:features.length,totalKnown:collection.features.length,
    truncated:collection.features.length>PREVIEW_MAX_FEATURES,
    sampleLimit:PREVIEW_MAX_FEATURES,vertexCount:stats.vertices,
    geometryCounts:kinds,bbox:stats.bbox,
    warnings:[
     'Schematic vector preview only: no basemap, geodetic scale or professional GIS validation.',
-    ...(crossesDateline?['The displayed coordinates span more than 180° longitude; this schematic cannot unwrap the antimeridian.']:[]),
+    ...(frame.status==='wrapped'?frame.warnings:[]),
     ...(collection.features.length>PREVIEW_MAX_FEATURES?['Only the first 60 features are displayed. The downloaded output may contain more.']:[])
    ],features
   };

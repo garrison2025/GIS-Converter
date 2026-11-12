@@ -25,7 +25,7 @@ function parts(type,coordinates){
  return {points:[],lines:[],polygons:[]};
 }
 function drawMap(host,preview,selected,onSelect){
- const width=800,height=420,pad=35,b=preview.bbox;
+ const width=800,height=420,pad=35,b=preview.displayBbox||preview.bbox;
  const dx=Math.max(b[2]-b[0],0.000001),dy=Math.max(b[3]-b[1],0.000001);
  const scale=Math.min((width-2*pad)/dx,(height-2*pad)/dy);
  const centerX=(b[0]+b[2])/2,centerY=(b[1]+b[3])/2;
@@ -37,6 +37,7 @@ function drawMap(host,preview,selected,onSelect){
  const lineD=coordinates=>coordinates.map((p,i)=>(i?'L':'M')+coords(p)).join(' ');
  const ringsD=coordinates=>coordinates.map(ring=>lineD(ring)+' Z').join(' ');
  const svg=svgEl('svg',{viewBox:'0 0 '+width+' '+height,
+  'data-antimeridian-view':preview.antimeridianView?'unwrapped':'original',
   role:'img','aria-label':'Schematic sample of '+preview.displayed+
    ' converted GIS features. Longitude and latitude, not a geodetically scaled map.',
   preserveAspectRatio:'xMidYMid meet'});
@@ -47,7 +48,7 @@ function drawMap(host,preview,selected,onSelect){
  for(let y=0;y<=height;y+=70)
   svg.appendChild(svgEl('line',{x1:0,y1:y,x2:width,y2:y,stroke:'#deebed','stroke-width':1}));
  preview.features.forEach((feature,i)=>{
-  const {points,lines,polygons}=parts(feature.type,feature.coordinates);
+  const {points,lines,polygons}=parts(feature.type,feature.displayCoordinates||feature.coordinates);
   const active=i===selected;
   const group=svgEl('g',{'data-feature':i,
    'aria-label':'Select '+feature.type+' feature '+(i+1),
@@ -134,6 +135,10 @@ export function renderConvertedPreview(root,entries){
   const bbox=put(el('p','preview-bounds'),
    'Sample longitude/latitude bounds (WGS84): '+btext(preview.bbox));
   previewBody.appendChild(coverage);previewBody.appendChild(bbox);
+  if(preview.antimeridianView){
+   previewBody.appendChild(put(el('p','preview-bounds'),
+    'Antimeridian-safe drawing frame (shifted longitude, visual only): '+btext(preview.displayBbox)));
+  }
   const map=el('div','preview-map'),properties=el('section','preview-properties');
   properties.setAttribute('aria-label','Selected feature attributes');
   previewBody.appendChild(map);

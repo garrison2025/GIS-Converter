@@ -135,6 +135,34 @@ try{
   await resultReady(page);
   return {csvGeoCoordinatesPreviewed:true};
  });
+ await test('p37_dateline_kml_to_geojson_continuous_svg_and_unchanged_download',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  const crossing='<?xml version="1.0" encoding="UTF-8"?>'+
+   '<kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark>'+
+   '<name>International Date Line</name><LineString><coordinates>'+
+   '179.5,12,0 -179.5,13,0</coordinates></LineString></Placemark></Document></kml>';
+  const out=await submit(page,'kml-to-geojson',
+   fixture(crossing,'dateline.kml','application/vnd.google-earth.kml+xml'));
+  check(out.name.endsWith('.geojson'),'Dateline result download must be GeoJSON');
+  const geo=JSON.parse(out.bytes.toString('utf8'));
+  const vertices=geo.features?.[0]?.geometry?.coordinates;
+  check(Array.isArray(vertices)&&vertices.length===2,'Converted dateline line missing');
+  check(Math.abs(vertices[0][0]-179.5)<0.001&&
+    Math.abs(vertices[1][0]+179.5)<0.001,
+    'Output geographic coordinates must NOT be shifted into SVG drawing frame');
+  await resultReady(page);
+  check(await page.locator('.preview-map svg').getAttribute('data-antimeridian-view')
+   ==='unwrapped','SVG did not use continuous antimeridian drawing coordinates');
+  const labels=await page.locator('.preview-bounds').allInnerTexts();
+  check(labels.length===2&&labels[0].includes('WGS84')&&
+   labels[1].includes('179.5')&&labels[1].includes('180.5'),
+   'Original WGS84 bounds and shifted drawing bounds are not separately visible');
+  check((await page.locator('.preview-warnings').innerText()).includes('shortest-longitude-arc'),
+   'Antimeridian geometry assumption warning missing');
+  check(await page.locator('.preview-map svg path[fill="none"]').count()>=1,
+   'Unwrapped SVG line path missing');
+  return {actualConvertedGeoJSONUnchanged:true,datelineSVGUnwrapped:true};
+ });
  await test('two_file_batch_preview_switch_and_no_download_regression',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
   const out=await submit(page,'kml-to-geojson',[
@@ -192,14 +220,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===12&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===13&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:12,failed:report.failed,
+  status:report.status,passed:report.passed,expected:13,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();
