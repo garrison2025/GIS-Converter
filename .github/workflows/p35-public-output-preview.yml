@@ -1,0 +1,49 @@
+name: GIS Converter P35 public output geometry preview acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p35-public-output-preview
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p35-public-output-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait until actual Cloudflare Pages serves exact merged P35 main SHA
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install locked dependency and actual test browser engines
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Verify public release SHA and preview noindex policy
+        run: npm run smoke:live-release
+      - name: Check eleven real converted-output local SVG previews on public Pages
+        run: npm run smoke:preview-live
+      - name: Recheck public 19 single-file GIS upload and download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Archive preview evidence and 19-route regression even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p35-public-output-geometry-preview
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p35-preview-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# No third party tiles, no GIS input upload, no account/indexing/payment writes.
