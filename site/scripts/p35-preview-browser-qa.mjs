@@ -93,6 +93,25 @@ try{
    'KMZ point was not previewed from actual output');
   return {kmzPoint:true};
  });
+ await test('gpx_timed_track_to_kmz_draws_actual_gx_track_line',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  const timed='<?xml version="1.0" encoding="UTF-8"?>'+
+   '<gpx version="1.1" creator="P35" xmlns="http://www.topografix.com/GPX/1/1">'+
+   '<trk><name>Timed Preview</name><trkseg>'+
+   '<trkpt lat="39.9" lon="116.4"><ele>20</ele><time>2026-01-01T00:00:00Z</time></trkpt>'+
+   '<trkpt lat="39.91" lon="116.41"><ele>21</ele><time>2026-01-01T00:01:00Z</time></trkpt>'+
+   '<trkpt lat="39.92" lon="116.42"><ele>22</ele><time>2026-01-01T00:02:00Z</time></trkpt>'+
+   '</trkseg></trk></gpx>';
+  const out=await submit(page,'gpx-to-kmz',
+   fixture(timed,'timed.gpx','application/gpx+xml'));
+  check(out.name.endsWith('.kmz'),'Actual timed GPX conversion did not return KMZ');
+  await resultReady(page);
+  check((await page.locator('.preview-summary').innerText()).includes('1 lines'),
+   'Timed GPX track was not represented as one line');
+  check(await page.locator('.preview-map svg path[fill="none"]').count()>=1,
+   'Timed line SVG path missing');
+  return {timedGpxTrackLine:true,source:'actual generated KMZ'};
+ });
  await test('csv_to_kml_wgs84_point_and_attributes',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
   const out=await submit(page,'csv-to-kml',fixture(csv,'points.csv','text/csv'));
@@ -173,14 +192,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===11&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===12&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:11,failed:report.failed,
+  status:report.status,passed:report.passed,expected:12,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();
