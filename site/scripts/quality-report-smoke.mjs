@@ -730,6 +730,17 @@ await test('P25 partially upgraded timed GPX segments cannot earn a blanket pass
  assert.equal(assertNoDetectedCriticalDataLoss(report),true);
 });
 
+await test('P25 post-conversion gx XML size cap returns unchanged KML rather than unverified oversized time data',async()=>{
+ const bound=4*1024*1024;
+ const comment='<!--'+'x'.repeat(bound-p24Kml.length-32)+'-->';
+ const nearLimit=p24Kml.replace('<Document>','<Document>'+comment);
+ assert(new TextEncoder().encode(nearLimit).length<bound);
+ const output=enhanceGpxTimedKml(buf(p24Source),buf(nearLimit));
+ assert.equal(output.converted,0);
+ assert.equal(output.reason,'expanded-output-size-limit');
+ assert.equal(new TextDecoder().decode(output.bytes),nearLimit);
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
