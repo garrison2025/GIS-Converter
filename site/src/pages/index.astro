@@ -1,6 +1,8 @@
 ---
 import {routes} from '../lib/gdal-matrix.mjs';
 import {formats} from '../data/content.mjs';
+import {getSeoLaunchConfig} from '../lib/seo-launch-config.mjs';
+const seo=getSeoLaunchConfig(process.env);
 const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  source,label:formats[source].name,links:routes.filter(([,s])=>s===source)
 })).filter(g=>g.links.length>0);
@@ -10,7 +12,8 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
 <head>
  <meta charset="UTF-8"/>
  <meta name="viewport" content="width=device-width, initial-scale=1"/>
- <meta name="robots" content="noindex,nofollow"/>
+ <meta name="robots" content={seo.robots}/>
+ {seo.indexable&&<link rel="canonical" href={seo.canonical('/')}/>}
  <meta name="description" content="Browser-based KML, KMZ, Shapefile, GeoJSON, GPX and CSV conversions powered by GDAL WebAssembly. Your GIS input stays in the browser."/>
  <title>GIS Converter — Convert KML, KMZ, SHP, GeoJSON, GPX & CSV</title>
  <style>

@@ -2,7 +2,9 @@
 import {routes} from '../../lib/gdal-matrix.mjs';
 import {getRouteNote, formats} from '../../data/content.mjs';
 import {routeGuides} from '../../data/route-guides.mjs';
+import {getSeoLaunchConfig} from '../../lib/seo-launch-config.mjs';
 export function getStaticPaths(){return routes.map(([slug,from,to])=>({params:{slug},props:{from,to,slug}}));}
+const seo=getSeoLaunchConfig(process.env);
 const {from,to,slug}=Astro.props;
 const info=getRouteNote(slug,from,to);
 const guide=routeGuides[slug];
@@ -14,7 +16,8 @@ const label=formats[from].name+' to '+formats[to].name;
 <head>
  <meta charset="UTF-8"/>
  <meta name="viewport" content="width=device-width, initial-scale=1"/>
- <meta name="robots" content="noindex,nofollow"/>
+ <meta name="robots" content={seo.robots}/>
+ {seo.indexable&&<link rel="canonical" href={seo.canonical('/converter/'+slug+'/')}/>}
  <meta name="description" content={info.context+' Convert locally with GDAL/WebAssembly; review the result before use.'}/>
  <title>{label} Converter — GIS Converter</title>
  <style>

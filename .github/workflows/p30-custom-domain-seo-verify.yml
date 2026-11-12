@@ -1,0 +1,42 @@
+name: GIS Converter P30 custom-domain SEO acceptance (manual, read-only)
+on:
+  workflow_dispatch:
+    inputs:
+      public_origin:
+        description: "Confirmed owned and connected HTTPS custom domain, e.g. https://yourdomain.com"
+        required: true
+        type: string
+      expected_commit:
+        description: "Optional 40-character deployed SHA; blank verifies selected main revision"
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  live-seo-domain-audit:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_PUBLIC_ORIGIN: ${{ inputs.public_origin }}
+      GIS_EXPECTED_COMMIT: ${{ inputs.expected_commit != '' && inputs.expected_commit || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install locked dependencies (no Cloudflare account access)
+        run: npm ci --no-audit --no-fund
+      - name: Audit actual custom domain and Pages mirror without modifying either site
+        run: npm run smoke:seo-live
+      - name: Preserve real public SEO acceptance or failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p30-custom-domain-seo-verification
+          path: site/p30-live-seo-acceptance.json
+          if-no-files-found: warn
+# Opt-in only after real domain ownership and DNS routing; does not deploy or submit GSC.
