@@ -1,0 +1,59 @@
+name: GIS Converter P27 public Pages release & live conversion verification (manual, no deploy)
+on:
+  workflow_dispatch:
+    inputs:
+      site_url:
+        description: "Public Cloudflare Pages URL to audit"
+        required: true
+        default: "https://gis-converter.pages.dev"
+        type: string
+      expected_commit:
+        description: "Optional 40-character deployed SHA; blank compares against selected main"
+        required: false
+        type: string
+      full_conversion_matrix:
+        description: "Also execute all 19 real public upload/download routes"
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+jobs:
+  release-verification:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: ${{ inputs.site_url }}
+      GIS_EXPECTED_COMMIT: ${{ inputs.expected_commit != '' && inputs.expected_commit || github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install exact audit dependencies (no deploy)
+        run: npm ci --no-audit --no-fund
+      - name: Compare actual public release.json with expected GitHub commit
+        run: npm run smoke:live-release
+      - name: Install Chromium for public upload/download checks
+        run: npx playwright install --with-deps chromium
+      - name: Test public Cloudflare Pages real conversions and browser downloads
+        run: node scripts/live-pages-qa.mjs
+      - name: Optional full 19-route real browser public conversion matrix
+        if: ${{ inputs.full_conversion_matrix }}
+        run: node scripts/live-all-routes.mjs
+      - name: Store public release and browser conversion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p27-live-release-verification
+          path: |
+            site/live-release-gate.json
+            site/live-pages-qa.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Explicitly manual and read-only; nothing here deploys to Cloudflare or changes billing/indexing.
