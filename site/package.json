@@ -28,7 +28,9 @@
     "smoke:release": "node scripts/release-gate.mjs",
     "smoke:live-release": "node scripts/live-release-gate.mjs",
     "smoke:live-loopback": "node scripts/live-release-loopback-smoke.mjs",
-    "smoke:seo-prelaunch": "node scripts/seo-prelaunch-audit.mjs"
+    "smoke:seo-prelaunch": "node scripts/seo-prelaunch-audit.mjs",
+    "smoke:complex-local": "node scripts/p29-complex-local-smoke.mjs",
+    "smoke:complex-live": "node scripts/p29-live-complex-gis.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
