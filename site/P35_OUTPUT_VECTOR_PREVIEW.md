@@ -32,7 +32,7 @@ Feature counts shown for GDAL readback are explicitly **sample counts**, not a s
 ## QA strategy
 
 1. `npm run smoke:preview-unit`: mixed point/line/polygon and inner hole, properties limits, 60-feature cap, invalid CRS and coordinates, oversized vertex rejection.
-2. `npm run smoke:preview-local`: **11 real Chromium, Firefox and WebKit browser tests** including KML→GeoJSON vector+fields; GeoJSON→Shapefile native ZIP readback including a polygon hole; KML→KMZ; CSV→KML; KML→GPX; KML→CSV; mini-batch file switch; source replacement cleaning; malformed input; Firefox and WebKit render.
+2. `npm run smoke:preview-local`: **12 real Chromium, Firefox and WebKit browser tests** including KML→GeoJSON vector+fields; GeoJSON→Shapefile native ZIP readback including a polygon hole; KML→KMZ; CSV→KML; KML→GPX; KML→CSV; time-stamped GPX→KMZ gx:Track line; mini-batch file switch; source replacement cleaning; malformed input; Firefox and WebKit render.
 3. Existing P34 batch, all 19 routes, P29 complex GIS, P31 mobile, P32 cross-browser, P33 native desktop GDAL, P30 isolated SEO and D1 offline billing remain required CI gates.
 4. After main merge, `p35-public-output-preview.yml` waits for **exact live Cloudflare Pages release SHA**, then executes the same 11 public browser tests and the existing 19 single-file route regression. Confirm the public evidence report rather than treating branch CI as live deployment.
 
