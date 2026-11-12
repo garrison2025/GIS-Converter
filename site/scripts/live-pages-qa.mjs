@@ -111,6 +111,44 @@ try{
  assert(await page.locator('#result').isHidden(),'Bad mixed-geometry file was exposed for download');
  report.mixedGeometryGuard={status:'PASSED',error:rejection};
 
+
+ // P17 public-domain check: long and colliding DBF field names must show review, not false certification.
+ const longFieldSample={type:'FeatureCollection',features:[{
+  type:'Feature',
+  properties:{LongPropertyOne:'one',LongPropertyTwo:'two',Label:'public synthetic QA'},
+  geometry:{type:'Point',coordinates:[116.4,39.9]}
+ }]};
+ await page.goto(origin+'/converter/geojson-to-shp/',{waitUntil:'domcontentloaded'});
+ await page.locator('#file').setInputFiles({
+  name:'long-field-qa.geojson',mimeType:'application/geo+json',
+  buffer:Buffer.from(JSON.stringify(longFieldSample))
+ });
+ await page.locator('#submit').click();
+ try{await page.locator('#result').waitFor({state:'visible',timeout:90000})}
+ catch{throw Error('P17 live schema-risk conversion failed: '+await page.locator('#error').textContent())}
+ const qp=page.waitForEvent('download');
+ await page.locator('#quality-download').click();
+ const qualityFile=await qp;
+ const q17=JSON.parse(fs.readFileSync(await qualityFile.path(),'utf8'));
+ const nameRisk=q17.checks.find(c=>c.id==='shp-field-limits');
+ assert(nameRisk?.status==='review','P17 DBF field name warning missing from live Cloudflare: '+JSON.stringify(q17.checks));
+ assert(q17.checks.find(c=>c.id==='attribute-fidelity')?.status==='unavailable','P17 falsely certified field values');
+ const shpWait=page.waitForEvent('download');
+ await page.locator('#download').click();
+ const qShp=await shpWait,shpZip=await JSZip.loadAsync(fs.readFileSync(await qShp.path()));
+ const dbfPath=Object.keys(shpZip.files).find(n=>n.toLowerCase().endsWith('.dbf'));
+ assert(dbfPath,'P17 returned ZIP has no DBF');
+ const dbfBytes=await shpZip.file(dbfPath).async('uint8array'),headers=[];
+ for(let offset=32;offset+32<dbfBytes.length&&dbfBytes[offset]!==0x0d;offset+=32){
+  const value=dbfBytes.subarray(offset,offset+11);
+  const nul=value.indexOf(0);
+  headers.push(new TextDecoder().decode(nul>=0?value.subarray(0,nul):value).trim());
+ }
+ assert(headers.length>=3&&headers.every(k=>k.length<=10)&&new Set(headers).size===headers.length,
+  'P17 DBF field names are not independently readable/unique: '+headers.join(','));
+ report.p17FieldRisk={status:'PASSED',qualityStatus:nameRisk.status,dbfFields:headers.length,
+   shortenedFields:headers.filter(x=>x.toLowerCase().startsWith('longprop')).length};
+
  // Basic mobile responsiveness (navigation and file upload UI)
  await page.setViewportSize({width:390,height:844});
  await page.goto(origin+'/converter/kml-to-geojson/',{waitUntil:'domcontentloaded'});
