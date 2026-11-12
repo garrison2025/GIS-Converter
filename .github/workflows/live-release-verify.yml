@@ -54,6 +54,6 @@ jobs:
           path: |
             site/live-release-gate.json
             site/live-pages-qa.json
-            site/live-all-routes-report.json
+            site/live-matrix-report.json
           if-no-files-found: warn
 # Explicitly manual and read-only; nothing here deploys to Cloudflare or changes billing/indexing.
