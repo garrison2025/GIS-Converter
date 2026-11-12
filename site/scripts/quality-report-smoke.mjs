@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import JSZip from 'jszip';
+import {applyGpxElevationToKml} from '../src/lib/gpx-elevation.mjs';
 import {inspectGpxLineFidelity} from '../src/lib/gpx-fidelity.mjs';
 import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 let passed=0;const records=[];
@@ -441,6 +442,43 @@ await test('P23 attribute type coercion from number to string is detected',async
   new TextEncoder().encode(JSON.stringify(geo)),'geojson');
  assert.equal(check(r,'shp-geojson-attributes').status,'review');
  assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+
+
+await test('P23 source GPX elevation is preserved in KML Z without changing 2D path',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9"><ele>90.125</ele></wpt>'+
+  '<trk><trkseg><trkpt lon="116.5" lat="39.8"><ele>100.5</ele></trkpt>'+
+  '<trkpt lon="116.6" lat="39.7"><ele>101.75</ele></trkpt></trkseg></trk></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+  '<Placemark><LineString><coordinates>116.5,39.8 116.6,39.7</coordinates></LineString></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ const out=new TextDecoder().decode(patched.bytes);
+ assert.equal(patched.applied,3);
+ assert(out.includes('116.4,39.9,90.125')&&out.includes('116.5,39.8,100.5')&&
+   out.includes('116.6,39.7,101.75'));
+ assert.equal((out.match(/<Placemark>/g)||[]).length,2);
+});
+await test('P23 conflicting altitudes on the same XY never guess a KML Z',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9"><ele>90</ele></wpt>'+
+  '<wpt lon="116.4" lat="39.9"><ele>105</ele></wpt></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,0);
+ assert.equal(new TextDecoder().decode(patched.bytes),kml);
+});
+await test('P23 absent source elevation does not invent heights',async()=>{
+ const source='<gpx><trk><trkseg><trkpt lon="116.5" lat="39.8"/>'+
+  '<trkpt lon="116.6" lat="39.7"/></trkseg></trk></gpx>';
+ const kml='<kml><LineString><coordinates>116.5,39.8 116.6,39.7</coordinates></LineString></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,0);
+ assert.equal(new TextDecoder().decode(patched.bytes),kml);
+});
+await test('P23 oversized GPX elevation inspector stays unavailable and leaves output intact',async()=>{
+ const kml='<kml><Point><coordinates>116.4,39.9</coordinates></Point></kml>';
+ const patched=applyGpxElevationToKml(buf('<gpx>'+('a'.repeat(4*1024*1024))+'</gpx>'),buf(kml));
+ assert.equal(patched.status,'unavailable');
+ assert.equal(new TextDecoder().decode(patched.bytes),kml);
 });
 
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
