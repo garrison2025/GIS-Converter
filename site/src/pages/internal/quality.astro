@@ -175,12 +175,22 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
      assert(kml.includes(name),'GPX feature omitted: '+name);
    }
    assert([...kml.matchAll(/<Point\b/gi)].length===2,'Route/track vertices duplicated as standalone KML points');
-   assert([...kml.matchAll(/<LineString\b/gi)].length>=4,'GPX routes and tracks not represented as lines');
+   const lineStrings=[...kml.matchAll(/<LineString\b[^>]*>[\s\S]*?<coordinates\b[^>]*>([\s\S]*?)<\/coordinates>/gi)];
+   // Two routes + two segments of Track A + one segment of Track B.
+   assert(lineStrings.length===5,'GPX track segment structure changed: expected five lines, got '+lineStrings.length);
+   const vertices=lineStrings.flatMap(match=>match[1].trim().split(/\s+/).map(pair=>pair.split(',').slice(0,2).map(Number)));
+   assert(vertices.length===10,'GPX route/track vertices changed: expected 10, got '+vertices.length);
+   const expectedVertices=[[116.3,39.8],[116.32,39.82],[116.2,39.7],[116.22,39.72],
+     [116.1,39.6],[116.12,39.62],[116.14,39.64],[116.16,39.66],[116.0,39.5],[116.02,39.52]];
+   for(const [lon,lat] of expectedVertices){
+     assert(vertices.some(p=>Math.abs(p[0]-lon)<1e-6&&Math.abs(p[1]-lat)<1e-6),
+       'GPX route/track vertex dropped or moved: '+lon+','+lat);
+   }
    const q=await createGISQualityReport(file,'gpx',output.bytes,dst);
    const check=q.checks.find(x=>x.id==='gpx-logical-features');
    assert(check?.status==='pass','Independent GPX logical feature check failed '+JSON.stringify(check));
    assertNoDetectedCriticalDataLoss(q);
-   return {sourceLogicalFeatures:6,exportPlacemarks:placemarks.length,lineGeometries:[...kml.matchAll(/<LineString\b/gi)].length,qualityStatus:check.status,outputBytes:output.bytes.length};
+   return {sourceLogicalFeatures:6,exportPlacemarks:placemarks.length,lineGeometries:lineStrings.length,routeAndTrackVertices:vertices.length,qualityStatus:check.status,outputBytes:output.bytes.length};
  }
  await mark('P20 mixed GPX waypoints routes and multi-segment tracks to KML without auxiliary duplicate features',()=>verifyP20Gpx('kml'));
  await mark('P20 mixed GPX waypoints routes and multi-segment tracks to KMZ without auxiliary duplicate features',()=>verifyP20Gpx('kmz'));
