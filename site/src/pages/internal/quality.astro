@@ -426,7 +426,7 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   for(const p of expected)
    assert(points.some(q=>q.length===3&&Math.abs(q[0]-p[0])<1e-6&&
       Math.abs(q[1]-p[1])<1e-6&&Math.abs(q[2]-p[2])<.01),
-      'GPX source elevation missing from KMZ: '+p.join(','));
+      'GPX source elevation missing from KMZ: '+p.join(',')+' near='+JSON.stringify(points.filter(q=>Math.abs(q[0]-p[0])<0.00001&&Math.abs(q[1]-p[1])<0.00001)));
   const quality=await createGISQualityReport(source,'gpx',result.bytes,'kmz');
   assert(quality.checks.find(c=>c.id==='gpx-vertex-metadata')?.status==='review',
     'GPX timestamp metadata still must require manual review');
