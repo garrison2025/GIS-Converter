@@ -67,6 +67,14 @@ function extractZipDirectory(buf){
   if(![0,8].includes(method))fail('unsupported ZIP compression method');
   if(diskNo || expanded===0xffffffff || compressed===0xffffffff || localOffset===0xffffffff)
     fail('ZIP64 or multi-disk ZIP unsupported');
+  // Evaluate entry-specific limits and path safety independently of local header consistency.
+  if(expanded>MAX_ENTRY_BYTES)fail('ZIP entry exceeds expanded-size limit');
+  if(compressed===0 && expanded>0)fail('impossible ZIP expansion');
+  if(compressed>0 && expanded>compressed*MAX_EXPANSION_RATIO && expanded>4096)
+    fail('suspicious ZIP expansion ratio');
+  const name=readName(bytes.subarray(ptr+46,ptr+46+nameLen),flags);
+  const folder=name.endsWith('/');
+  const normal=cleanPath(folder?name.slice(0,-1):name);
   if(localOffset+30>offset || view.getUint32(localOffset,true)!==0x04034b50)
     fail('invalid local ZIP header');
   // ZIP readers may consult local headers instead of the central directory.
@@ -94,17 +102,10 @@ function extractZipDirectory(buf){
     view.getUint32(localOffset+22,true)!==expanded
   ))fail('local and central ZIP checksum or sizes differ');
   localRanges.push([localOffset,payloadEnd]);
-  const name=readName(bytes.subarray(ptr+46,ptr+46+nameLen),flags);
-  const folder=name.endsWith('/');
-  const normal=cleanPath(folder?name.slice(0,-1):name);
   const collision=low(normal);
   if(seen.has(collision))fail('duplicate archive path');
   seen.add(collision);
   if((madeBy>>8)===3 && ((external>>>16)&0xf000)===0xa000)fail('ZIP symlinks unsupported');
-  if(expanded>MAX_ENTRY_BYTES)fail('ZIP entry exceeds expanded-size limit');
-  if(compressed===0 && expanded>0)fail('impossible ZIP expansion');
-  if(compressed>0 && expanded>compressed*MAX_EXPANSION_RATIO && expanded>4096)
-    fail('suspicious ZIP expansion ratio');
   totalExpanded+=expanded;
   if(totalExpanded>MAX_EXPANDED_BYTES)fail('ZIP total expansion exceeds limit');
   if(!folder)records.push({name:normal,bytes:expanded,compressionMethod:method});
