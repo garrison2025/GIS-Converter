@@ -104,23 +104,9 @@ function coordinates(xml,state){
  if(!entries.length)invalid('KML coordinates missing');
  return entries.map(value=>kmlTuple(value,state));
 }
-function kmlPolygon(body,state){
- const outers=blocks(body,'outerBoundaryIs'),inners=blocks(body,'innerBoundaryIs');
- if(outers.length!==1)invalid('KML exterior ring missing/ambiguous');
- return [ring(coordinates(outers[0],state),{vertices:state.vertices,max:state.max})];
-}
-// Use a single vertex counter for parsing, do not count the same KML ring twice.
 function parseKmlPolygon(body,state){
  const outers=blocks(body,'outerBoundaryIs'),inners=blocks(body,'innerBoundaryIs');
  if(outers.length!==1)invalid('KML outerBoundaryIs not unique');
- const parseRing=part=>{
-  const coords=blocks(part,'coordinates');
-  if(coords.length!==1)invalid('KML ring coordinates ambiguous');
-  const entries=coords[0].trim().split(/\s+/).filter(Boolean);
-  return ring(entries.map(value=>kmlTuple(value,state)),{vertices:0});
- };
- // positions already validated & counted by kmlTuple; ring() used only to
- // verify closure and area via separate dedicated check.
  const parsed=[outers[0],...inners].map(part=>{
   const elems=blocks(part,'coordinates');
   if(elems.length!==1)invalid('KML ring has ambiguous coordinate elements');
@@ -136,8 +122,7 @@ function kml(text,state){
  if(!/<(?:[\w.-]+:)?kml\b/i.test(text))invalid('Not KML');
  const placemarks=blocks(text,'Placemark');
  return checkFeatures(placemarks.map(mark=>{
-  if(/<(?:[\w.-]+:)?(?:Point|Model|LinearRing|gx:Track)\b/i.test(mark)&&
-     !/<(?:[\w.-]+:)?Polygon\b/i.test(mark))
+  if(/<(?:[\w.-]+:)?(?:Point|Model|Track|MultiTrack)\b/i.test(mark))
    invalid('Mixed/unsupported KML geometry');
   const polygonBodies=blocks(mark,'Polygon');
   const lineBodies=blocks(mark,'LineString');
@@ -285,15 +270,6 @@ function geometrySame(a,b){
   return uniquelyMatch(a.coordinates,b.coordinates,partSame).kind==='match';
  return false;
 }
-function structure(feature){
- const c=feature.coordinates;
- if(feature.type==='LineString')return 'line:1:'+c.length;
- if(feature.type==='MultiLineString')return 'lines:'+c.map(p=>p.length).sort((a,b)=>a-b).join(',');
- const poly=f=>f.map(r=>r.length).sort((a,b)=>a-b).join(',');
- if(feature.type==='Polygon')return 'polygon:1:'+poly(c);
- if(feature.type==='MultiPolygon')return 'polygons:'+c.map(poly).sort().join('|');
- return 'unknown';
-}
 function approxBbox(a,b){
  return a.every((n,i)=>Math.abs(n-b[i])<=EPS*4);
 }
@@ -303,6 +279,8 @@ function compare(before,after){
  if(before.length!==after.length)
   return {status:'review',detail:'Complex geometry feature count differs: '+
    before.length+' source / '+after.length+' output. Individual coordinates are omitted.'};
+ if(before.length===1&&before[0].type!==after[0].type)
+  return {status:'review',detail:'Complex geometry family changed: one input feature and one output feature of different geometry types. Original coordinates omitted.'};
  // For non-simple coordinate matching we need a unique per-feature pairing.
  // A shape changing geometry family or parts (holes) may still be definite
  // when only one possible corresponding source/output feature exists.
