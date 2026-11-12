@@ -26,7 +26,8 @@
     "smoke:all-ui": "node scripts/local-all-routes-smoke.mjs",
     "smoke:polygon-stress": "node scripts/polygon-stress.mjs",
     "smoke:release": "node scripts/release-gate.mjs",
-    "smoke:live-release": "node scripts/live-release-gate.mjs"
+    "smoke:live-release": "node scripts/live-release-gate.mjs",
+    "smoke:live-loopback": "node scripts/live-release-loopback-smoke.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
