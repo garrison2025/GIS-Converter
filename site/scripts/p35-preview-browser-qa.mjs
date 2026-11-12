@@ -6,6 +6,7 @@
 import fs from 'node:fs';
 import {chromium,firefox,webkit} from 'playwright';
 import {createHash} from 'node:crypto';
+import JSZip from 'jszip';
 const origin=(process.env.GIS_BASE_URL||'https://gis-converter.pages.dev').replace(/\/+$/,'');
 const local=origin.startsWith('http://127.0.0.1:');
 const outfile=local?'p35-preview-local-results.json':'p35-preview-live-results.json';
@@ -111,6 +112,32 @@ try{
   check(await page.locator('.preview-map svg path[fill="none"]').count()>=1,
    'Timed line SVG path missing');
   return {timedGpxTrackLine:true,source:'actual generated KMZ'};
+ });
+ await test('p38_real_public_etrex_timed_gpx_to_kmz_geometry_and_timestamp_readback',async()=>{
+  // Licensed public fixture already used for independent P29 fidelity tests.
+  // No private GPS data, and no coordinates are logged to CI.
+  const page=await browser.newPage({acceptDownloads:true});
+  const data=fs.readFileSync('test-fixtures/public-gpx/etrex20x-real-track.gpx');
+  const out=await submit(page,'gpx-to-kmz',{
+   name:'public-etrex20x.gpx',mimeType:'application/gpx+xml',buffer:data
+  });
+  check(out.name.endsWith('.kmz'),'Real GPX output did not produce KMZ');
+  const zip=await JSZip.loadAsync(out.bytes);
+  const entry=zip.file('doc.kml');
+  check(entry,'Real GPX output KMZ has no doc.kml');
+  const xml=await entry.async('string');
+  const times=[...xml.matchAll(/<when\b[^>]*>/gi)].length;
+  const coords=[...xml.matchAll(/<gx:coord\b[^>]*>/gi)].length;
+  check(times===104&&coords===104,
+   'Real-source GPS timeline and gx:Track positions were not paired 1:1');
+  await resultReady(page);
+  const summary=await page.locator('.preview-summary').innerText();
+  check(summary.includes('104 vertices')&&summary.includes('1 lines'),
+   'Real GPX output preview omitted timed track vertices');
+  check(await page.locator('.preview-map svg path[fill="none"]').count()>=1,
+   'Real public GPX converted track SVG is missing');
+  return {realPublicFixture:true,timedVertices:104,pairedTimeElements:104,
+   actualOutputKMZ:true,previewFromOutput:true};
  });
  await test('csv_to_kml_wgs84_point_and_attributes',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
@@ -220,14 +247,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===13&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===14&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:13,failed:report.failed,
+  status:report.status,passed:report.passed,expected:14,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();
