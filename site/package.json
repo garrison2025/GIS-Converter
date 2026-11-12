@@ -46,6 +46,7 @@
     "smoke:preview-integrity": "node scripts/p36-preview-data-integrity.mjs",
     "smoke:antimeridian-unit": "node scripts/p37-antimeridian-unit.mjs",
     "smoke:preview-boundaries": "node scripts/p38-gis-preview-boundaries.mjs",
+    "smoke:point-fidelity": "node scripts/p39-point-coordinate-fidelity.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
