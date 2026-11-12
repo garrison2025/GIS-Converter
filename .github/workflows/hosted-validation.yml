@@ -23,6 +23,8 @@ jobs:
         run: npm run smoke:quality-report
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
         run: npm run smoke:mini-batch-unit
+      - name: P35 verify bounded WGS84 output vector sample, polygon holes and CRS rejection
+        run: npm run smoke:preview-unit
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -55,6 +57,8 @@ jobs:
         run: npm run smoke:mobile-local
       - name: P34 verify free 3-file browser batch ZIP in Chromium Firefox WebKit, drag-drop and atomic cancellation
         run: npm run smoke:mini-batch-local
+      - name: P35 real Chromium Firefox WebKit preview of converted SHP KML KMZ GPX CSV and batch
+        run: npm run smoke:preview-local
       - name: Verify hard cancel, timeout, retry and worker termination
         run: npm run smoke:cancel
       - name: Real browser GDAL test using only gzip-encoded WASM response
@@ -87,6 +91,7 @@ jobs:
             site/astro-tool-ui-result.json
             site/p31-mobile-local-results.json
             site/p34-mini-batch-local-results.json
+            site/p35-preview-local-results.json
             site/gis-quality-results.json
             site/live-matrix-report.json
             site/all-ui-gate-error.txt
