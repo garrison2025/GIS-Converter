@@ -164,6 +164,35 @@ await test('Field risk analysis does not pretend to certify attribute values',as
  assert.equal(r.checks.find(x=>x.id==='shp-field-limits').status,'pass');
  assert.equal(r.checks.find(x=>x.id==='attribute-fidelity').status,'unavailable');
 });
+await test('GPX logical waypoints routes and tracks count excludes auxiliary track vertices',async()=>{
+ const gpx='<gpx version="1.1"><wpt lon="116.4" lat="39.9"/><wpt lon="116.5" lat="39.8"/>'+
+  '<rte><name>Route One</name><rtept lon="116.6" lat="39.8"/><rtept lon="116.7" lat="39.9"/></rte>'+
+  '<trk><name>Track One</name><trkseg><trkpt lon="116.8" lat="40.0"/><trkpt lon="116.9" lat="40.1"/></trkseg></trk></gpx>';
+ const kml='<kml><Document>'+Array.from({length:4},(_,i)=>'<Placemark><name>Test '+i+
+   '</name><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>').join('')+'</Document></kml>';
+ const r=await createGISQualityReport(makeFile(gpx,'complex.gpx'),'gpx',buf(kml),'kml');
+ assert.deepEqual(r.input.gpxTypes,{waypoints:2,routes:1,tracks:1});
+ assert.equal(r.input.gpxLogicalFeatures,4);
+ assert.equal(check(r,'gpx-logical-features').status,'pass');
+ assert.equal(check(r,'feature-count').status,'unavailable'); // complex geometry comparison remains limited
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('Missing GPX track in KML blocks delivery despite incomplete geometry inspection',async()=>{
+ const gpx='<gpx><wpt lon="116.4" lat="39.9"/><rte><rtept lon="116.5" lat="39.8"/></rte>'+
+ '<trk><trkseg><trkpt lon="116.6" lat="39.7"/></trkseg></trk></gpx>';
+ const kml='<kml><Document><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+ '<Placemark><LineString><coordinates>116.5,39.8</coordinates></LineString></Placemark></Document></kml>';
+ const r=await createGISQualityReport(makeFile(gpx,'loss.gpx'),'gpx',buf(kml),'kml');
+ assert.equal(check(r,'gpx-logical-features').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('GPX comments and CDATA cannot invent logical waypoint or route features',async()=>{
+ const source='<gpx><!-- <wpt lat="40" lon="100"/> -->'+
+  '<wpt lon="116.4" lat="39.9"><name><![CDATA[<rte><trk>]]></name></wpt></gpx>';
+ const m=await inspectGISData('gpx',buf(source));
+ assert.equal(m.gpxLogicalFeatures,1);
+ assert.deepEqual(m.gpxTypes,{waypoints:1,routes:0,tracks:0});
+});
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;

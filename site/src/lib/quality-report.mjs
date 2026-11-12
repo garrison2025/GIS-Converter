@@ -152,8 +152,13 @@ function parseGpx(bytes){
  catch{return blank('gpx','GPX is not UTF-8')}
  const meta=blank('gpx');
  if(!/<(?:\w+:)?gpx\b/i.test(text))return blank('gpx','No GPX root');
- const waypoints=[...text.matchAll(/<(?:\w+:)?wpt\b([^>]*)>/gi)];
- const hasRoutes=/<(?:\w+:)?(?:trk|rte)\b/i.test(text);
+ // Count the three logical GPX feature families, not auxiliary route/track
+ // vertex layers, which GDAL also exposes separately.
+ const normalized=text.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g,'');
+ const waypoints=[...normalized.matchAll(/<(?:\w+:)?wpt\b([^>]*)>/gi)];
+ const routes=[...normalized.matchAll(/<(?:\w+:)?rte\b/gi)];
+ const tracks=[...normalized.matchAll(/<(?:\w+:)?trk\b/gi)];
+ const hasRoutes=routes.length>0||tracks.length>0;
  const box=[Infinity,Infinity,-Infinity,-Infinity];let valid=true;
  for(const m of waypoints){
   const lat=m[1].match(/\blat\s*=\s*["']([^"']+)["']/i);
@@ -162,6 +167,10 @@ function parseGpx(bytes){
  }
  meta.features=hasRoutes?null:waypoints.length;meta.geometry=hasRoutes?['point','line']:['point'];
  meta.crs='WGS84';meta.bbox=endBox(box);
+ // Definite logical-feature accounting is independent from full geometry
+ // coordinate inspection. Invalid waypoint coordinates disable this check.
+ meta.gpxLogicalFeatures=valid?waypoints.length+routes.length+tracks.length:null;
+ meta.gpxTypes={waypoints:waypoints.length,routes:routes.length,tracks:tracks.length};
  meta.pointOnly=!hasRoutes&&valid&&waypoints.length>0;
  meta.complete=meta.pointOnly;
  if(hasRoutes)meta.issues.push('GPX track/route feature accounting is not supported');
@@ -229,6 +238,14 @@ export async function createGISQualityReport(input,source,output,target){
  if(before.features!==null&&after.features!==null&&before.complete&&after.complete){
   add('feature-count',before.features===after.features?'pass':'review',before.features+' input → '+after.features+' output features');
  }else add('feature-count','unavailable','Input/output counts are not directly comparable for these geometries');
+ if(source==='gpx'&&['kml','kmz'].includes(target)){
+  const expected=before.gpxLogicalFeatures;
+  if(Number.isInteger(expected)&&expected>=0&&Number.isInteger(after.features)){
+   add('gpx-logical-features',expected===after.features?'pass':'review',
+     'GPX waypoints + routes + tracks: '+expected+' input → '+after.features+
+     ' KML Placemarks. Auxiliary GPX route/track vertices are not separate features.');
+  }else add('gpx-logical-features','unavailable','Full GPX logical feature accounting is unavailable for this file');
+ }
  if(before.pointOnly&&after.pointOnly&&before.bbox&&after.bbox&&before.crs==='WGS84'&&after.crs==='WGS84'){
   const matches=before.bbox.every((x,i)=>eq(x,after.bbox[i]));
   add('coordinate-bounds',matches?'pass':'review',matches?'Point longitude/latitude bounds agree':'Coordinates differ: input '+before.bbox.join(', ')+'; output '+after.bbox.join(', '));
@@ -258,7 +275,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
