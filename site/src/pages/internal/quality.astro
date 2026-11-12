@@ -246,6 +246,58 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
  });
 
 
+ // P21: Run the actual browser GDAL engine on a point-metadata-heavy GPX
+ // and prove we do not label time/elevation/extension preservation as certified.
+ const gpxP21=gpxP20
+  .replace('<wpt lat="39.90" lon="116.40"><name>',
+    '<wpt lat="39.90" lon="116.40"><ele>90.1</ele><time>2025-02-01T10:00:00Z</time><name>')
+  .replace('<rtept lat="39.8" lon="116.3"/>',
+    '<rtept lat="39.8" lon="116.3"><ele>120</ele><time>2025-02-01T10:05:00Z</time></rtept>')
+  .replace('<trkpt lat="39.6" lon="116.1"/>',
+    '<trkpt lat="39.6" lon="116.1"><ele>135.25</ele><time>2025-02-01T10:10:00Z</time></trkpt>');
+ async function testP21GpxMetadata(target) {
+   const file=new File([gpxP21],'p21-metadata.gpx');
+   const output=await convertGdal(gdal,file,'gpx',target);
+   const r=await createGISQualityReport(file,'gpx',output.bytes,target);
+   const line=r.checks.find(c=>c.id==='gpx-line-geometry');
+   const metadata=r.checks.find(c=>c.id==='gpx-vertex-metadata');
+   assert(line?.status==='pass','P21 real GDAL lost/moved GPX segments or vertices '+JSON.stringify(line));
+   assert(metadata?.status==='review'&&metadata.detail.includes('elevation')&&metadata.detail.includes('time'),
+      'GPX metadata hazard was not presented as a review warning');
+   assertNoDetectedCriticalDataLoss(r);
+   const reportText=JSON.stringify(r);
+   assert(!reportText.includes('2025-02-01T10:10:00Z'),'GPX original timestamps leaked into report');
+   return {target,lineStatus:line.status,metadataStatus:metadata.status,summary:line.detail,bytes:output.bytes.length};
+ }
+ await mark('P21 real GPX point-level time/elevation risk is flagged for KML',()=>testP21GpxMetadata('kml'));
+ await mark('P21 real GPX point-level time/elevation risk is flagged for KMZ',()=>testP21GpxMetadata('kmz'));
+
+ await mark('P21 actual DBF null/long UTF-8 string/precision risk is reported without false certification',async()=>{
+  const source={type:'FeatureCollection',features:[{
+   type:'Feature',properties:{Code:'A01',Title:'中文属性'.repeat(80),
+     Nullable:null,Score:1.2345678901234567},
+   geometry:{type:'Point',coordinates:[116.4,39.9]}
+  }]};
+  const file=new File([JSON.stringify(source)],'p21-attributes.geojson');
+  const result=await convertGdal(gdal,file,'geojson','shp');
+  const quality=await createGISQualityReport(file,'geojson',result.bytes,'shp');
+  const risk=quality.checks.find(c=>c.id==='shp-value-limits');
+  assert(risk?.status==='review','P21 DBF nullable and width/precision issues not flagged');
+  assert(quality.checks.find(c=>c.id==='attribute-fidelity')?.status==='unavailable',
+    'P21 claimed arbitrary DBF field value certification');
+  const zip=await JSZip.loadAsync(result.bytes);
+  const dbfName=Object.keys(zip.files).find(name=>name.endsWith('.dbf'));
+  assert(dbfName,'Actual Shapefile DBF missing');
+  const bytes=await zip.file(dbfName).async('uint8array');
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  assert(view.getUint32(4,true)===1,'DBF row count differs from source');
+  const headerLength=view.getUint16(8,true),recordLength=view.getUint16(10,true);
+  assert(headerLength>=65&&recordLength>1&&headerLength+recordLength<=bytes.length,
+    'DBF header or record byte sizes invalid');
+  assert(!JSON.stringify(quality).includes('中文属性'),'Original DBF string value leaked into report');
+  return {dbfRecords:1,dbfBytes:bytes.length,headerLength,recordLength,dbfValueRisk:risk.status};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}

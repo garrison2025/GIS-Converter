@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import JSZip from 'jszip';
+import {inspectGpxLineFidelity} from '../src/lib/gpx-fidelity.mjs';
 import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 let passed=0;const records=[];
 const makeFile=(text,name='input.geojson')=>new File([text],name);
@@ -168,8 +169,12 @@ await test('GPX logical waypoints routes and tracks count excludes auxiliary tra
  const gpx='<gpx version="1.1"><wpt lon="116.4" lat="39.9"/><wpt lon="116.5" lat="39.8"/>'+
   '<rte><name>Route One</name><rtept lon="116.6" lat="39.8"/><rtept lon="116.7" lat="39.9"/></rte>'+
   '<trk><name>Track One</name><trkseg><trkpt lon="116.8" lat="40.0"/><trkpt lon="116.9" lat="40.1"/></trkseg></trk></gpx>';
- const kml='<kml><Document>'+Array.from({length:4},(_,i)=>'<Placemark><name>Test '+i+
-   '</name><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>').join('')+'</Document></kml>';
+ const kml='<kml><Document>'+
+ '<Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+ '<Placemark><Point><coordinates>116.5,39.8</coordinates></Point></Placemark>'+
+ '<Placemark><LineString><coordinates>116.6,39.8 116.7,39.9</coordinates></LineString></Placemark>'+
+ '<Placemark><LineString><coordinates>116.8,40.0 116.9,40.1</coordinates></LineString></Placemark>'+
+ '</Document></kml>';
  const r=await createGISQualityReport(makeFile(gpx,'complex.gpx'),'gpx',buf(kml),'kml');
  assert.deepEqual(r.input.gpxTypes,{waypoints:2,routes:1,tracks:1});
  assert.equal(r.input.gpxLogicalFeatures,4);
@@ -192,6 +197,81 @@ await test('GPX comments and CDATA cannot invent logical waypoint or route featu
  const m=await inspectGISData('gpx',buf(source));
  assert.equal(m.gpxLogicalFeatures,1);
  assert.deepEqual(m.gpxTypes,{waypoints:1,routes:0,tracks:0});
+});
+const p21Gpx='<gpx version="1.1"><wpt lon="116.4" lat="39.9"><time>2025-01-01T00:00:00Z</time></wpt>'+
+ '<rte><rtept lon="116.5" lat="39.8"><ele>45</ele></rtept><rtept lon="116.6" lat="39.7"/></rte>'+
+ '<trk><trkseg><trkpt lon="116.7" lat="39.6"><time>2025-01-01T00:00:01Z</time><ele>50</ele></trkpt>'+
+ '<trkpt lon="116.8" lat="39.5"/></trkseg><trkseg><trkpt lon="116.9" lat="39.4"/>'+
+ '<trkpt lon="117.0" lat="39.3"><extensions><sensor>private</sensor></extensions></trkpt></trkseg></trk></gpx>';
+const p21Kml='<kml><Document>'+
+ '<Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+ '<Placemark><LineString><coordinates>116.5,39.8 116.6,39.7</coordinates></LineString></Placemark>'+
+ '<Placemark><MultiGeometry><LineString><coordinates>116.7,39.6 116.8,39.5</coordinates></LineString>'+
+ '<LineString><coordinates>116.9,39.4 117,39.3</coordinates></LineString></MultiGeometry></Placemark>'+
+ '</Document></kml>';
+await test('P21 GPX route/track segment vertices and limited precision match',async()=>{
+ const r=await createGISQualityReport(makeFile(p21Gpx,'with-tracks.gpx'),'gpx',buf(p21Kml),'kml');
+ assert.equal(check(r,'gpx-logical-features').status,'pass');
+ assert.equal(check(r,'gpx-line-geometry').status,'pass');
+ assert.equal(check(r,'gpx-vertex-metadata').status,'review');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+ assert(!JSON.stringify(r).includes('2025-01-01T00:00:01Z'));
+ assert(!JSON.stringify(r).includes('private'));
+});
+await test('P21 GPX lost track vertex blocks output even if three Placemarks survive',async()=>{
+ const bad=p21Kml.replace('116.7,39.6 116.8,39.5','116.7,39.6');
+ const r=await createGISQualityReport(makeFile(p21Gpx,'with-tracks.gpx'),'gpx',buf(bad),'kml');
+ assert.equal(check(r,'gpx-logical-features').status,'pass');
+ assert.equal(check(r,'gpx-line-geometry').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P21 GPX moved track vertex blocks output without a count mismatch',async()=>{
+ const bad=p21Kml.replace('116.8,39.5','116.85,39.5');
+ const r=await createGISQualityReport(makeFile(p21Gpx,'moved.gpx'),'gpx',buf(bad),'kml');
+ assert.equal(check(r,'gpx-line-geometry').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P21 GPX changed track segment count blocks output',async()=>{
+ const bad=p21Kml.replace('</coordinates></LineString><LineString><coordinates>',' 116.9,39.4</coordinates></LineString><LineString><coordinates>');
+ const r=await createGISQualityReport(makeFile(p21Gpx,'segment.gpx'),'gpx',buf(bad),'kml');
+ assert.equal(check(r,'gpx-line-geometry').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P21 KMZ unwrap uses bounded independent GPX line check',async()=>{
+ const zip=new JSZip();zip.file('doc.kml',p21Kml);
+ const r=await createGISQualityReport(makeFile(p21Gpx,'meta.gpx'),'gpx',
+  new Uint8Array(await zip.generateAsync({type:'uint8array'})),'kmz');
+ assert.equal(check(r,'gpx-line-geometry').status,'pass');
+ assert.equal(check(r,'gpx-vertex-metadata').status,'review');
+});
+await test('P21 waypoint-only GPX has no line invariant to certify',async()=>{
+ const src='<gpx><wpt lon="116.4" lat="39.9"/></gpx>';
+ const output='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const r=await createGISQualityReport(makeFile(src,'waypoint.gpx'),'gpx',buf(output),'kml');
+ assert.equal(check(r,'gpx-line-geometry').status,'unavailable');
+ assert.equal(check(r,'gpx-logical-features').status,'pass');
+});
+await test('P21 DBF risk report covers null, string width and high precision without leaking values',async()=>{
+ const props={Label:'私人字段内容'.repeat(50),Nullable:null,Score:1.2345678901234567,Count:9007199254740992};
+ const src=fixture([116.4,39.9],props);
+ const r=await createGISQualityReport(makeFile(src),'geojson',buf(src),'shp');
+ const risk=check(r,'shp-value-limits');
+ assert.equal(risk.status,'review');
+ assert(risk.detail.includes('explicit nulls'));
+ assert(risk.detail.includes('UTF-8 strings longer'));
+ assert(!JSON.stringify(r).includes('私人字段内容'));
+});
+await test('P21 ordinary short scalar DBF values do not trigger new width/precision warning',async()=>{
+ const src=fixture([116.4,39.9],{Code:'A1',Count:2,Score:2.5});
+ const r=await createGISQualityReport(makeFile(src),'geojson',buf(src),'shp');
+ assert.equal(check(r,'shp-value-limits').status,'pass');
+ assert.equal(check(r,'attribute-fidelity').status,'unavailable');
+});
+
+await test('P21 over-limit GPX XML remains unavailable rather than consuming unbounded inspector memory',async()=>{
+ const r=inspectGpxLineFidelity('a'.repeat(4*1024*1024+1),'<kml/>');
+ assert.equal(r.status,'unavailable');
+ assert.equal(r.metadata.status,'unavailable');
 });
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
