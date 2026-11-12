@@ -35,6 +35,11 @@ export async function convertGdal(gdal,input,src,dst){
   else if(['shp','kml','kmz','gpx','geojson'].includes(dst))options.push('-t_srs','EPSG:4326');
   if(dst==='csv')options.push('-lco','GEOMETRY=AS_XY');
   if(dst==='shp')options.push('-lco','ENCODING=UTF-8');
+  // GDAL exposes GPX route_points/track_points as auxiliary layers in addition
+  // to the actual waypoint, route and track features. Exporting all five
+  // layers can duplicate vertices as standalone KML Points.
+  // Select the three logical feature layers explicitly (GDAL GPX driver).
+  if(src==='gpx')options.push('waypoints','routes','tracks');
   files=await collect(gdal,await gdal.ogr2ogr(ds,options,'gis_'+src+'_to_'+dst));
  }finally{try{gdal.close(ds)}catch{}}
  if(dst==='shp'){
