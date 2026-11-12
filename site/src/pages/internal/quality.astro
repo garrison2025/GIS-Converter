@@ -387,6 +387,32 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {reverseDbfStatus:fidelity.status,withheld:true};
  });
 
+
+ await mark('P23 GPX elevation as 3D KML coordinates through real GDAL open options',async()=>{
+  const input='<?xml version="1.0" encoding="UTF-8"?>'+
+   '<gpx version="1.1" creator="P23 3D QA" xmlns="http://www.topografix.com/GPX/1/1">'+
+   '<wpt lon="116.4" lat="39.9"><ele>91.25</ele><name>P23 Alt Waypoint</name></wpt>'+
+   '<rte><name>P23 Alt Route</name><rtept lon="116.2" lat="39.6"><ele>112.5</ele></rtept>'+
+   '<rtept lon="116.25" lat="39.65"><ele>125.75</ele></rtept></rte>'+
+   '<trk><name>P23 Alt Track</name><trkseg><trkpt lon="116.1" lat="39.5"><ele>140.5</ele></trkpt>'+
+   '<trkpt lon="116.15" lat="39.55"><ele>155.25</ele></trkpt></trkseg></trk></gpx>';
+  const source=new File([input],'p23-elevation.gpx');
+  const out=await convertGdal(gdal,source,'gpx','kml');
+  const xml=new TextDecoder().decode(out.bytes);
+  const tags=[...xml.matchAll(/<coordinates\b[^>]*>([^<]+)<\/coordinates>/gi)];
+  const positions=tags.flatMap(m=>m[1].trim().split(/\s+/).map(x=>x.split(',').map(Number)));
+  const expected=[[116.4,39.9,91.25],[116.2,39.6,112.5],[116.25,39.65,125.75],
+   [116.1,39.5,140.5],[116.15,39.55,155.25]];
+  for(const p of expected){
+   assert(positions.some(q=>q.length>=3&&Math.abs(q[0]-p[0])<1e-6&&
+     Math.abs(q[1]-p[1])<1e-6&&Math.abs(q[2]-p[2])<.01),
+     'GPX altitude not retained as KML Z for source point '+p.join(','));
+  }
+  const quality=await createGISQualityReport(source,'gpx',out.bytes,'kml');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {retainedAltitudeSamples:expected.length,altitudeMode:'source GPX ele mapped to KML geometry Z',bytes:out.bytes.length};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
