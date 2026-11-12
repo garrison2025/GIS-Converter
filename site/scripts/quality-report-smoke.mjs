@@ -605,6 +605,15 @@ await test('P24 separate gx timed track fields never appear in downloadable qual
  assert(!JSON.stringify(r).includes('116.11 39.51'));
 });
 
+await test('P24 invalid calendar day never becomes a fabricated gx:Track timestamp',async()=>{
+ const source=p24Source.replace('2026-11-12T01:00:05Z','2026-02-31T01:00:05Z');
+ const output=enhanceGpxTimedKml(buf(source),buf(p24Kml));
+ const xml=new TextDecoder().decode(output.bytes);
+ assert.equal(output.converted,1);
+ assert(!xml.includes('2026-03-03T01:00:05.000Z'));
+ assert(xml.includes('116.1,39.5,101.5 116.11,39.51,102'));
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
