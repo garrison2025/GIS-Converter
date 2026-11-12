@@ -66,6 +66,27 @@ const label=formats[from].name+' to '+formats[to].name;
  .quality[data-status="partial"]{border-color:#cfdce1}
  .report-link{font-weight:700;font-size:13px;text-decoration:underline}
  .quality strong{color:inherit}
+ .preview-panel{margin-top:18px;border:1px solid #cbdde1;border-radius:13px;background:#fff;padding:16px}
+ .preview-panel h3{margin:0 0 7px;font-size:17px;color:#174454}
+ .preview-note{color:#566e78;font-size:12px;margin:0 0 12px!important}
+ .preview-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+ .preview-controls label{font-weight:700;font-size:12px;color:#355c67}
+ .preview-controls select{font:inherit;font-size:13px;background:white;color:#174454;border:1px solid #a9c5c9;border-radius:8px;padding:8px;max-width:100%;min-width:150px}
+ .preview-controls select:focus-visible{outline:3px solid #bee9dd;outline-offset:2px}
+ .preview-map{overflow:hidden;border:1px solid #d9e8eb;border-radius:10px;background:#f4f9fb}
+ .preview-map svg{display:block;width:100%;height:auto;min-height:160px;max-height:410px}
+ .preview-map [role=button]{cursor:pointer}
+ .preview-map [role=button]:focus-visible{outline:2px solid #cf642b;outline-offset:2px}
+ .preview-summary,.preview-bounds{font-size:12px;color:#365c69;margin:6px 0!important;overflow-wrap:anywhere}
+ .preview-unavailable{background:#f8f3e7;border-radius:8px;padding:12px;font-size:13px;color:#635635}
+ .preview-properties{background:#f7fafb;padding:12px;border-radius:10px}
+ .preview-properties h4{font-size:13px;margin:0 0 7px}
+ .preview-properties p{margin:0!important}
+ .preview-fields{display:grid;grid-template-columns:minmax(90px,1fr) 2fr;gap:5px 12px;margin:0;font-size:12px}
+ .preview-fields dt{color:#4c6774;font-weight:700;overflow-wrap:anywhere}
+ .preview-fields dd{margin:0;color:#22485b;overflow-wrap:anywhere}
+ .preview-warnings{padding-left:18px;color:#6f5b3a;font-size:11px;margin:10px 0 0}
+ .preview-warnings li{margin:4px 0}
  #warning{white-space:pre-wrap;color:#7b5c2b;font-size:13px}
  .note{border:1px solid #eeddbb;background:#fff9ef;border-radius:14px;padding:20px;margin-top:20px}
  .note strong{color:#805515}.note p{font-size:13px;color:#725e46;margin:7px 0 0}
@@ -122,6 +143,7 @@ const label=formats[from].name+' to '+formats[to].name;
      <p class="small">A structural check, not a guarantee of data accuracy. Review geometry, fields and coordinates in independent GIS software.</p>
    </section>
    <a id="download" class="download" href="#" download>Download {info.target.name} <span aria-hidden="true">↓</span></a>
+   <section id="preview-panel" class="preview-panel" aria-label="Local converted GIS output vector preview" hidden></section>
   </section>
  </form>
  <div class="note" role="note"><strong>Important: experimental converter</strong><p>Results are not automatically certified. Verify geometry, attributes and coordinate reference system in your GIS software before using the file for professional or critical decisions.</p></div>
@@ -175,6 +197,7 @@ const status=document.querySelector('#status'),btn=document.querySelector('#subm
 const file=document.querySelector('#file'),error=document.querySelector('#error'),result=document.querySelector('#result');
 const cancelButton=document.querySelector('#cancel');
 const selected=document.querySelector('#file-info');
+const previewPanel=document.querySelector('#preview-panel');
 const placeholder=selected.textContent;
 let linkUrl=null,reportUrl=null,activeTask=null;
 const MAX_FILES=3;
@@ -239,6 +262,7 @@ const resetOutput=()=>{
  if(linkUrl){URL.revokeObjectURL(linkUrl);linkUrl=null;}
  if(reportUrl){URL.revokeObjectURL(reportUrl);reportUrl=null;}
  document.querySelector('#quality').hidden=true;
+ previewPanel.replaceChildren();previewPanel.hidden=true;
  result.hidden=true;
  const dl=document.querySelector('#download');dl.removeAttribute('href');
  const qa=document.querySelector('#quality-download');qa.removeAttribute('href');
@@ -306,6 +330,9 @@ form?.addEventListener('submit',async(event)=>{
    output={
     ...zipped,
     quality:miniBatchSummary(outputs,inputs.map(x=>x.name)),
+    previewEntries:outputs.map((result,i)=>({
+      label:inputs[i].name,preview:result.preview
+    })),
     warning:'Mini-batch ZIP includes '+inputs.length+
       ' converted outputs, individual inspection reports and a manifest.'
    };
@@ -346,6 +373,16 @@ form?.addEventListener('submit',async(event)=>{
    qa.download=inputs.length>1?'gis-mini-batch-summary.json':
     'gis-quality-'+form.dataset.slug+'.json';
    view.hidden=false;
+  }
+  // Optional local visualization never decides whether a verified GIS
+  // conversion can be downloaded. No map tiles, external API, or upload.
+  try{
+   const {renderConvertedPreview}=await import('../../lib/converted-preview-ui.mjs');
+   renderConvertedPreview(previewPanel,inputs.length>1?output.previewEntries:
+    [{label:inputs[0].name,preview:output.preview}]);
+  }catch{
+   previewPanel.hidden=false;
+   previewPanel.textContent='Local schematic preview unavailable. The GIS download remains ready.';
   }
   result.hidden=false;
   status.textContent=inputs.length>1?
