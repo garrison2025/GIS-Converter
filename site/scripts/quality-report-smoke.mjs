@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import JSZip from 'jszip';
+import {applyGpxElevationToKml} from '../src/lib/gpx-elevation.mjs';
 import {inspectGpxLineFidelity} from '../src/lib/gpx-fidelity.mjs';
 import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 let passed=0;const records=[];
@@ -374,6 +375,153 @@ await test('P22 DBF data count mismatch blocks download',async()=>{
    await p22Zip(p22Fields,[p22Rows[0]]),'shp');
  assert.equal(check(r,'dbf-attribute-values').status,'review');
  assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+
+
+await test('P23 DBF to GeoJSON independently compares all eligible Chinese and numeric values',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const output=new TextEncoder().encode(JSON.stringify(p22Input));
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',output,'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'pass');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('P23 DBF to GeoJSON detects changed Chinese text and blocks download',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features[1].properties.Label='深圳公園';
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+ assert(!JSON.stringify(r).includes('深圳公園'));
+ assert(!JSON.stringify(r).includes('深圳公园'));
+});
+await test('P23 missing GeoJSON attribute is detected as definite loss',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);
+ delete geo.features[0].properties.Code;
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P23 numeric rounding is detected by independent DBF field comparison',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features[0].properties.Score=12.5;
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P23 source and output record count mismatch is independently blocked',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features.pop();
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P23 unknown DBF CPG cannot be certified',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows,{cpg:false});
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(p22Input)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'unavailable');
+});
+await test('P23 blank DBF fields remain unverified rather than incorrectly matching null',async()=>{
+ const rows=p22Rows.map(row=>({...row}));rows[0].Label='';
+ const src=await p22Zip(p22Fields,rows);
+ const geo=structuredClone(p22Input);geo.features[0].properties.Label=null;
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'unavailable');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('P23 attribute type coercion from number to string is detected',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features[0].properties.Score='12.75';
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+
+
+await test('P23 source GPX elevation is preserved in KML Z without changing 2D path',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9"><ele>90.125</ele></wpt>'+
+  '<trk><trkseg><trkpt lon="116.5" lat="39.8"><ele>100.5</ele></trkpt>'+
+  '<trkpt lon="116.6" lat="39.7"><ele>101.75</ele></trkpt></trkseg></trk></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+  '<Placemark><LineString><coordinates>116.5,39.8 116.6,39.7</coordinates></LineString></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ const out=new TextDecoder().decode(patched.bytes);
+ assert.equal(patched.applied,3);
+ assert(out.includes('116.4,39.9,90.125')&&out.includes('116.5,39.8,100.5')&&
+   out.includes('116.6,39.7,101.75'));
+ assert.equal((out.match(/<Placemark>/g)||[]).length,2);
+});
+await test('P23 conflicting altitudes on the same XY never guess a KML Z',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9"><ele>90</ele></wpt>'+
+  '<wpt lon="116.4" lat="39.9"><ele>105</ele></wpt></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,0);
+ assert.equal(new TextDecoder().decode(patched.bytes),kml);
+});
+await test('P23 absent source elevation does not invent heights',async()=>{
+ const source='<gpx><trk><trkseg><trkpt lon="116.5" lat="39.8"/>'+
+  '<trkpt lon="116.6" lat="39.7"/></trkseg></trk></gpx>';
+ const kml='<kml><LineString><coordinates>116.5,39.8 116.6,39.7</coordinates></LineString></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,0);
+ assert.equal(new TextDecoder().decode(patched.bytes),kml);
+});
+await test('P23 oversized GPX elevation inspector stays unavailable and leaves output intact',async()=>{
+ const kml='<kml><Point><coordinates>116.4,39.9</coordinates></Point></kml>';
+ const patched=applyGpxElevationToKml(buf('<gpx>'+('a'.repeat(4*1024*1024))+'</gpx>'),buf(kml));
+ assert.equal(patched.status,'unavailable');
+ assert.equal(new TextDecoder().decode(patched.bytes),kml);
+});
+
+await test('P23 XML comments and CDATA cannot smuggle fake GPX elevation',async()=>{
+ const source='<gpx><!-- <wpt lon="116.4" lat="39.9"><ele>999</ele></wpt> -->'+
+  '<wpt lon="116.4" lat="39.9"><name><![CDATA[<ele>500</ele>]]></name>'+
+  '<ele>90.125</ele></wpt></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,1);
+ assert(new TextDecoder().decode(patched.bytes).includes('116.4,39.9,90.125'));
+});
+await test('P23 GPX extension ele must never override actual point elevation',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9">'+
+  '<extensions><sensor:ele>9000</sensor:ele></extensions>'+
+  '<ele>90.125</ele></wpt></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,1);
+ assert(new TextDecoder().decode(patched.bytes).includes('116.4,39.9,90.125'));
+});
+
+await test('P23 earlier self-closing GPX route points cannot swallow a later elevated trackpoint',async()=>{
+ const source='<gpx><rte><rtept lon="116.3" lat="39.8"/>'+
+  '<rtept lon="116.35" lat="39.85"><ele>120</ele></rtept></rte>'+
+  '<trk><trkseg><trkpt lon="116.1" lat="39.6"><ele>135.25</ele></trkpt>'+
+  '<trkpt lon="116.15" lat="39.65"/></trkseg></trk></gpx>';
+ const kml='<kml><Placemark><LineString><coordinates>116.3,39.8 116.35,39.85</coordinates></LineString></Placemark>'+
+  '<Placemark><LineString><coordinates>116.1,39.6 116.15,39.65</coordinates></LineString></Placemark></kml>';
+ const output=applyGpxElevationToKml(buf(source),buf(kml));
+ const xml=new TextDecoder().decode(output.bytes);
+ assert.equal(output.applied,2);
+ assert(xml.includes('116.35,39.85,120'));
+ assert(xml.includes('116.1,39.6,135.25'));
+ assert(xml.includes('116.15,39.65</coordinates>'));
+});
+
+await test('P23 duplicate GPX visits at same XY with missing height do not inherit previous Z',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9"><ele>90</ele></wpt>'+
+  '<wpt lon="116.4" lat="39.9"/></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const result=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(result.applied,0);
+ assert.equal(new TextDecoder().decode(result.bytes),kml);
 });
 
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};

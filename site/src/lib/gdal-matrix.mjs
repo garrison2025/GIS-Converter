@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {applyGpxElevationToKml} from './gpx-elevation.mjs';
 export const routes=[
 ['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
 ['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
@@ -42,6 +43,19 @@ export async function convertGdal(gdal,input,src,dst){
   if(src==='gpx')options.push('waypoints','routes','tracks');
   files=await collect(gdal,await gdal.ogr2ogr(ds,options,'gis_'+src+'_to_'+dst));
  }finally{try{gdal.close(ds)}catch{}}
+ if(src==='gpx'&&['kml','kmz'].includes(dst)){
+  // The tested browser GDAL build does not reliably materialize GPX <ele>
+  // as KML Z even when ELE_AS_25D is requested. Add *unambiguous* source
+  // elevation values to the output's existing Point/LineString coordinates.
+  // Never infer timestamps or vertical datums, and never manufacture Z when
+  // source elevation is absent or ambiguous.
+  const kmlKey=[...files.keys()].find(name=>name.toLowerCase().endsWith('.kml'));
+  if(kmlKey){
+   const sourceBytes=new Uint8Array(await input.arrayBuffer());
+   const patched=applyGpxElevationToKml(sourceBytes,files.get(kmlKey));
+   files.set(kmlKey,patched.bytes);
+  }
+ }
  if(dst==='shp'){
   const exts=[...files.keys()].map(n=>n.toLowerCase().split('.').pop());
   for(const ext of ['shp','shx','dbf'])if(!exts.includes(ext))throw Error('Shapefile missing .'+ext);

@@ -349,6 +349,91 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {dbfStatus:value.status,withheld:true};
  });
 
+
+ await mark('P23 real GDAL Shapefile to GeoJSON reverse DBF fields match',async()=>{
+  const original={type:'FeatureCollection',features:[
+   {type:'Feature',properties:{Code:'A01',Label:'北京园区',Count:12,Score:12.75},
+    geometry:{type:'Point',coordinates:[116.4,39.9]}},
+   {type:'Feature',properties:{Code:'B02',Label:'深圳园区',Count:-3,Score:-2.125},
+    geometry:{type:'Point',coordinates:[114.1,22.5]}}
+  ]};
+  const source=await convertGdal(gdal,new File([JSON.stringify(original)],'p23-source.geojson'),'geojson','shp');
+  const file=new File([source.bytes],'p23-source.zip');
+  const exported=await convertGdal(gdal,file,'shp','geojson');
+  const quality=await createGISQualityReport(file,'shp',exported.bytes,'geojson');
+  const check=quality.checks.find(c=>c.id==='shp-geojson-attributes');
+  assert(check?.status==='pass','P23 reverse SHP attribute parity failed: '+JSON.stringify(check));
+  assertNoDetectedCriticalDataLoss(quality);
+  const rows=JSON.parse(new TextDecoder().decode(exported.bytes)).features;
+  assert(rows.length===2,'P23 source DBF row count changed');
+  assert(rows[0].properties.Label==='北京园区'&&rows[1].properties.Label==='深圳园区','Chinese DBF values missing');
+  return {dbfStatus:check.status,rows:rows.length,fields:['Code','Label','Count','Score'],quality:check.detail};
+ });
+ await mark('P23 real GDAL Shapefile-to-GeoJSON attribute mutation triggers download block',async()=>{
+  const original={type:'FeatureCollection',features:[{type:'Feature',
+   properties:{Code:'A01',Label:'北京园区',Count:12,Score:12.75},
+   geometry:{type:'Point',coordinates:[116.4,39.9]}}]};
+  const packed=await convertGdal(gdal,new File([JSON.stringify(original)],'p23-mutate.geojson'),'geojson','shp');
+  const file=new File([packed.bytes],'p23-mutate.zip');
+  const exported=await convertGdal(gdal,file,'shp','geojson');
+  const json=JSON.parse(new TextDecoder().decode(exported.bytes));
+  json.features[0].properties.Count=999;
+  const changed=new TextEncoder().encode(JSON.stringify(json));
+  const quality=await createGISQualityReport(file,'shp',changed,'geojson');
+  const fidelity=quality.checks.find(c=>c.id==='shp-geojson-attributes');
+  assert(fidelity?.status==='review','P23 failed to notice modified converted GeoJSON');
+  let blocked=false;try{assertNoDetectedCriticalDataLoss(quality)}catch(e){blocked=e.code==='DATA_LOSS'}
+  assert(blocked,'P23 modified SHP-to-GeoJSON output was released');
+  return {reverseDbfStatus:fidelity.status,withheld:true};
+ });
+
+
+ await mark('P23 GPX elevation as 3D KML coordinates through real GDAL open options',async()=>{
+  const input='<?xml version="1.0" encoding="UTF-8"?>'+
+   '<gpx version="1.1" creator="P23 3D QA" xmlns="http://www.topografix.com/GPX/1/1">'+
+   '<wpt lon="116.4" lat="39.9"><ele>91.25</ele><name>P23 Alt Waypoint</name></wpt>'+
+   '<rte><name>P23 Alt Route</name><rtept lon="116.2" lat="39.6"><ele>112.5</ele></rtept>'+
+   '<rtept lon="116.25" lat="39.65"><ele>125.75</ele></rtept></rte>'+
+   '<trk><name>P23 Alt Track</name><trkseg><trkpt lon="116.1" lat="39.5"><ele>140.5</ele></trkpt>'+
+   '<trkpt lon="116.15" lat="39.55"><ele>155.25</ele></trkpt></trkseg></trk></gpx>';
+  const source=new File([input],'p23-elevation.gpx');
+  const out=await convertGdal(gdal,source,'gpx','kml');
+  const xml=new TextDecoder().decode(out.bytes);
+  const tags=[...xml.matchAll(/<coordinates\b[^>]*>([^<]+)<\/coordinates>/gi)];
+  const positions=tags.flatMap(m=>m[1].trim().split(/\s+/).map(x=>x.split(',').map(Number)));
+  const expected=[[116.4,39.9,91.25],[116.2,39.6,112.5],[116.25,39.65,125.75],
+   [116.1,39.5,140.5],[116.15,39.55,155.25]];
+  for(const p of expected){
+   assert(positions.some(q=>q.length>=3&&Math.abs(q[0]-p[0])<1e-6&&
+     Math.abs(q[1]-p[1])<1e-6&&Math.abs(q[2]-p[2])<.01),
+     'GPX altitude not retained as KML Z for source point '+p.join(','));
+  }
+  const quality=await createGISQualityReport(source,'gpx',out.bytes,'kml');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {retainedAltitudeSamples:expected.length,altitudeMode:'source GPX ele mapped to KML geometry Z',bytes:out.bytes.length};
+ });
+
+
+ await mark('P23 GPX KMZ preserves unambiguous route track and waypoint elevations as KML Z',async()=>{
+  const source=new File([gpxP21],'p23-elevation-kmz.gpx');
+  const result=await convertGdal(gdal,source,'gpx','kmz');
+  const zip=await JSZip.loadAsync(result.bytes);
+  const kml=await zip.file('doc.kml')?.async('string');
+  assert(kml,'KMZ doc.kml unavailable');
+  const points=[...kml.matchAll(/<coordinates\b[^>]*>([^<]+)<\/coordinates>/gi)]
+    .flatMap(m=>m[1].trim().split(/\s+/).map(x=>x.split(',').map(Number)));
+  const expected=[[116.4,39.9,90.1],[116.3,39.8,120],[116.1,39.6,135.25]];
+  for(const p of expected)
+   assert(points.some(q=>q.length===3&&Math.abs(q[0]-p[0])<1e-6&&
+      Math.abs(q[1]-p[1])<1e-6&&Math.abs(q[2]-p[2])<.01),
+      'GPX source elevation missing from KMZ: '+p.join(',')+' near='+JSON.stringify(points.filter(q=>Math.abs(q[0]-p[0])<0.00001&&Math.abs(q[1]-p[1])<0.00001)));
+  const quality=await createGISQualityReport(source,'gpx',result.bytes,'kmz');
+  assert(quality.checks.find(c=>c.id==='gpx-vertex-metadata')?.status==='review',
+    'GPX timestamp metadata still must require manual review');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {retainedAltitudeSamples:expected.length,reviewedTimestamps:true};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}

@@ -17,7 +17,7 @@ try{
  await page.waitForFunction(()=>document.body.dataset.done==='true',{timeout:150000});
  report=await page.evaluate(()=>window.__qualityResult);
  report.pageErrors=errors;
- if(report.status!=='PASSED'||report.cases.length!==14||errors.length)throw Error('GIS quality gate failed: '+JSON.stringify(report));
+ if(report.status!=='PASSED'||report.cases.length!==18||errors.length)throw Error('GIS quality gate failed: '+JSON.stringify(report));
 }catch(e){report.status='FAILED';report.executionError=String(e?.stack||e)}
 finally{fs.writeFileSync('gis-quality-results.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser?.close();server.kill()}
 if(report.status!=='PASSED')process.exitCode=1;
