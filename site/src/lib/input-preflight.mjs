@@ -1,3 +1,4 @@
+import {preflightCoordinateCsv} from './csv-preflight.mjs';
 /**
  * Fail-closed, bounded client-side preflight for untrusted GIS input.
  * Not a ZIP decompressor. Do not confuse central directory checks with
@@ -131,6 +132,10 @@ export async function preflightGISInput(file,source,target){
   if(['kml','gpx'].includes(source)){
    const text=new TextDecoder('utf-8').decode(prefix);
    if(/<!DOCTYPE|<!ENTITY/i.test(text))fail('XML DTD/entities unsupported');
+  }
+  if(source==='csv'){
+   const pointRows=await preflightCoordinateCsv(file);
+   return {kind:'text',source,inputBytes:file.size,coordinateRows:pointRows.rows};
   }
   if(source==='geojson'&&target==='shp'){
    let doc;
