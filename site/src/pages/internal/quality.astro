@@ -457,6 +457,11 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
    xml=await zip.file('doc.kml')?.async('string');
   }
   assert(xml,'P24 KML body absent');
+  // Validate the actual XML namespace and tree, not only matching strings.
+  const parsed=new DOMParser().parseFromString(xml,'application/xml');
+  assert(!parsed.getElementsByTagName('parsererror').length,'P24 produced invalid KML XML');
+  const nativeGx=parsed.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','Track');
+  assert(nativeGx.length===2,'P24 gx:Track is not recognized under its required namespace');
   const tracks=[...xml.matchAll(/<gx:Track\b/g)],when=[...xml.matchAll(/<when>/g)];
   const coords=[...xml.matchAll(/<gx:coord>/g)];
   const lines=[...xml.matchAll(/<LineString\b/g)],places=[...xml.matchAll(/<Placemark\b/g)];
