@@ -139,6 +139,35 @@ try{
   return {realPublicFixture:true,timedVertices:104,pairedTimeElements:104,
    actualOutputKMZ:true,previewFromOutput:true};
  });
+ await test('p39_real_csv_to_kml_quality_report_independently_checks_all_point_values',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  const three='longitude,latitude,Name\n'+
+   '-10,0,First\n0.153219,2.421738,Middle\n10,10,Last\n';
+  const out=await submit(page,'csv-to-kml',fixture(three,'three-points.csv','text/csv'));
+  check(out.name.endsWith('.kml'),'Actual CSV to KML download unavailable');
+  const xml=out.bytes.toString('utf8');
+  check((xml.match(/<Point\b/g)||[]).length===3,
+   'Expected three independent point geometries in real converted KML');
+  await resultReady(page);
+  const [download]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),
+   page.locator('#quality-download').click()
+  ]);
+  const report=JSON.parse(fs.readFileSync(await download.path(),'utf8'));
+  check(report.kind==='local-structural-quality-report','Actual quality JSON missing');
+  const value=report.checks.find(x=>x.id==='point-coordinate-values');
+  check(value?.status==='pass',
+   'Real GDAL conversion failed independent output point coordinate test: '+
+    (value?.detail||'missing check'));
+  check((report.checks.find(x=>x.id==='feature-count'))?.status==='pass',
+   'Converted point feature count does not match source');
+  check((report.checks.find(x=>x.id==='coordinate-bounds'))?.status==='pass',
+   'Converted point bounds do not match source');
+  check(!value.detail.includes('0.153219'),
+   'Point-level private GIS coordinates leaked into quality check details');
+  return {realWasmConversion:true,allThreePointValuesCompared:true,
+   independentlyDownloadedReport:true};
+ });
  await test('csv_to_kml_wgs84_point_and_attributes',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
   const out=await submit(page,'csv-to-kml',fixture(csv,'points.csv','text/csv'));
@@ -247,14 +276,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===14&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===15&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:14,failed:report.failed,
+  status:report.status,passed:report.passed,expected:15,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();
