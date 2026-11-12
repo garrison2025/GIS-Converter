@@ -22,10 +22,10 @@ function extractElevations(gpx){
  const known=new Map(),ambiguous=new Set();
  // Self-closing points have no elevation and must veto the same XY in any
  // other visit. Otherwise a repeated no-elevation waypoint can inherit Z.
- for(const m of xml.matchAll(/<(?:[\\w.-]+:)?(?:wpt|trkpt|rtept)\\b([^>]*?)\\s*\\/>/gi)){
+ for(const m of xml.matchAll(/<(?:[\w.-]+:)?(?:wpt|trkpt|rtept)\b([^>]*?)\s*\/>/gi)){
   const attrs=m[1];
-  const lon=attrs.match(/(?:^|\\s)lon\\s*=\\s*["']([^"']+)["']/i)?.[1];
-  const lat=attrs.match(/(?:^|\\s)lat\\s*=\\s*["']([^"']+)["']/i)?.[1];
+  const lon=attrs.match(/(?:^|\s)lon\s*=\s*["']([^"']+)["']/i)?.[1];
+  const lat=attrs.match(/(?:^|\s)lat\s*=\s*["']([^"']+)["']/i)?.[1];
   const point=lon!==undefined&&lat!==undefined?numbers(lon,lat):null;
   if(point)ambiguous.add(point.key);
  }
