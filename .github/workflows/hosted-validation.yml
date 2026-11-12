@@ -55,6 +55,8 @@ jobs:
         run: npm run prepare:pages
       - name: Independently verify commit-attested Pages bundle and prelaunch SEO protection
         run: npm run smoke:release
+      - name: Verify release checker rejects stale SHA and Cloudflare HTML fallback over real HTTP
+        run: npm run smoke:live-loopback
       - name: Verify Pages Function in local Wrangler runtime with real GDAL/WASM
         run: npm run smoke:wrangler
       - name: Verify short Cloudflare build command is configured
@@ -81,6 +83,7 @@ jobs:
             site/compressed-gdal-browser-result.json
             site/pages-preview-package-report.json
             site/p27-static-release-gate.json
+            site/p27-live-loopback-results.json
             site/dist/release.json
             site/wrangler-pages-result.json
             site/package-lock.json
