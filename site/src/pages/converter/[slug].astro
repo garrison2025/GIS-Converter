@@ -1,9 +1,12 @@
 ---
 import {routes} from '../../lib/gdal-matrix.mjs';
 import {getRouteNote, formats} from '../../data/content.mjs';
+import {routeGuides} from '../../data/route-guides.mjs';
 export function getStaticPaths(){return routes.map(([slug,from,to])=>({params:{slug},props:{from,to,slug}}));}
 const {from,to,slug}=Astro.props;
 const info=getRouteNote(slug,from,to);
+const guide=routeGuides[slug];
+const related=routes.filter(([other,source,target])=>other!==slug&&(source===from||target===to)).slice(0,3);
 const label=formats[from].name+' to '+formats[to].name;
 ---
 <!doctype html>
@@ -67,6 +70,7 @@ const label=formats[from].name+' to '+formats[to].name;
  .details-grid article{background:#fff;border:1px solid #dce7eb;border-radius:14px;padding:20px}
  .details-grid h3{font-size:17px;margin:0 0 8px}.details-grid p{font-size:14px;color:#526d7c;margin:0}
  .steps{padding-left:24px;color:#466777;font-size:15px}.steps li{margin:10px 0;padding-left:4px}
+ .route-guide{padding:0 0 44px}.route-guide h2{font-size:25px;line-height:1.3;margin:0 0 14px}.route-guide h3{font-size:17px;margin:0 0 8px}.route-guide p,.route-guide li{font-size:14px;color:#526d7c;line-height:1.72}.route-guide p{margin:0}.guide-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.guide-layout article{background:#fff;border:1px solid #dce7eb;border-radius:13px;padding:20px}.guide-layout .wide{grid-column:span 2}.route-guide .faq{margin-top:28px}.faq-entry{padding:14px 0;border-bottom:1px solid #e2eaed}.faq-entry h3{margin:0 0 6px}.related-tools{margin-top:26px}.related-tools ul{padding-left:18px;margin:8px 0}.related-tools li{margin:6px 0}.related-tools a{font-weight:650;text-decoration:underline;text-underline-offset:3px}@media(max-width:550px){.guide-layout{grid-template-columns:1fr}.guide-layout .wide{grid-column:auto}}
  .footer{display:flex;justify-content:space-between;flex-wrap:wrap;gap:15px;padding:30px 0;border-top:1px solid #dfe9eb;color:#637a89;font-size:13px}
  [hidden]{display:none!important}
  @media(max-width:800px){.grid{grid-template-columns:1fr}.sidebar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.sidebar .card{margin:0}}
@@ -130,6 +134,26 @@ const label=formats[from].name+' to '+formats[to].name;
    <article><h3>What might change?</h3><p>{info.caution}</p></article>
    <article><h3>How is the file processed?</h3><p>A copy is passed to a dedicated GDAL/WebAssembly worker in your browser. Cancelling terminates the worker. No account is needed for this tool.</p></article>
   </div>
+ </section>
+ <section class="route-guide" aria-label="Practical format conversion guidance">
+  <h2>{info.source.name} to {info.target.name}: practical examples and checks</h2>
+  <div class="guide-layout">
+   <article class="wide"><h3>Example use case</h3><p>{guide.example}</p></article>
+   <article><h3>Prepare the input</h3><p>{guide.inputs}</p></article>
+   <article><h3>What the download contains</h3><p>{guide.output}</p></article>
+   <article><h3>Verify the converted file</h3><p>{guide.verify}</p></article>
+   <article><h3>Common mistake to avoid</h3><p>{guide.mistake}</p></article>
+  </div>
+  <div class="faq" aria-label="Frequently asked questions">
+   <h2>Questions about {info.source.name} to {info.target.name}</h2>
+   {guide.faq.map(([question,answer])=><div class="faq-entry">
+    <h3>{question}</h3><p>{answer}</p>
+   </div>)}
+  </div>
+  <nav class="related-tools" aria-label="Related converters">
+   <h2>Related GIS converters</h2>
+   <ul>{related.map(([other,source,target])=><li><a href={'/converter/'+other+'/'}>{formats[source].name} to {formats[target].name} converter</a></li>)}</ul>
+  </nav>
  </section>
 </main>
 <footer class="container footer"><a href="/">← All 19 GIS converters</a><span>Engineering preview · No paid features enabled · Noindex</span></footer>
