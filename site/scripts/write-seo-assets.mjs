@@ -50,7 +50,11 @@ export function writeSeoAssets({dir='dist',env=process.env}={}){
  const cleanHeaders=headerLines.join('\n').trimEnd()+'\n\n'+[
   '/internal/*','  X-Robots-Tag: noindex, nofollow, noarchive','',
   '/release.json','  X-Robots-Tag: noindex, nofollow, noarchive','',
-  '/engine/*','  X-Robots-Tag: noindex, nofollow, noarchive',''
+  '/engine/*','  X-Robots-Tag: noindex, nofollow, noarchive','',
+  // Cloudflare Pages serves the same production deployment on both the
+  // custom domain and the pages.dev mirror. Never index either mirror host.
+  'https://gis-converter.pages.dev/*','  X-Robots-Tag: noindex, nofollow, noarchive','',
+  'https://:version.gis-converter.pages.dev/*','  X-Robots-Tag: noindex, nofollow, noarchive',''
  ].join('\n');
  ensure(!/\/\*\s*\n\s*X-Robots-Tag:\s*noindex\b/im.test(cleanHeaders),
   'Global noindex survived activation');
