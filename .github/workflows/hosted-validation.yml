@@ -29,6 +29,8 @@ jobs:
         run: npm run smoke:preview-integrity
       - name: P37 verify antimeridian-safe line/polygon/holes display with original coordinates preserved
         run: npm run smoke:antimeridian-unit
+      - name: P38 verify GPX KML KMZ SHP coordinate, timestamp and polygon preview boundaries
+        run: npm run smoke:preview-boundaries
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file

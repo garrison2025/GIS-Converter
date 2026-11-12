@@ -1,0 +1,51 @@
+name: GIS Converter P38 public GIS output boundary acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p38-public-gis-boundary-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p38-public-gis-boundaries:
+    runs-on: ubuntu-latest
+    timeout-minutes: 33
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact merged P38 SHA on Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned dependencies and Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Verify P38 output byte boundary cases
+        run: npm run smoke:preview-boundaries
+      - name: Verify deployed release and noindex engineering-preview protection
+        run: npm run smoke:live-release
+      - name: Check 14 real output previews including public Garmin GPX
+        run: npm run smoke:preview-live
+      - name: Recheck 19 GIS conversion routes and real downloads on public site
+        run: node scripts/live-all-routes.mjs
+      - name: Preserve public GIS boundary evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p38-public-boundary-evidence
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p35-preview-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Read-only browser test. No user files to external services or billing writes.
