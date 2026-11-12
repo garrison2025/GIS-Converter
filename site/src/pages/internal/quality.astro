@@ -6,6 +6,9 @@ const title='GDAL quality gate — polygon rings, Unicode and CRS reprojection';
 import {convertGdal,makeFixture} from '../../lib/gdal-matrix.mjs';
 import {createGISQualityReport,assertNoDetectedCriticalDataLoss} from '../../lib/quality-report.mjs';
 import JSZip from 'jszip';
+import realEtrexGpx from '../../../test-fixtures/public-gpx/etrex20x-real-track.gpx?raw';
+import realEmptySegmentGpx from '../../../test-fixtures/public-gpx/trainingcenter-empty-segment.gpx?raw';
+import realWaypointGpx from '../../../test-fixtures/public-gpx/runkeeper-garmin-waypoint.gpx?raw';
 const report={status:'RUNNING',cases:[],errors:[]};
 window.__qualityResult=report;
 const render=()=>document.querySelector('#results').textContent=JSON.stringify(report,null,2);
@@ -558,6 +561,136 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   ()=>verifyP25BrowserLongTrack('kmz',24,80,true));
  await mark('P25 real GDAL dense GPX 3500-point uninterrupted timed track to KML',
   ()=>verifyP25BrowserLongTrack('kml',1,3500,false));
+
+
+ // P26: upstream public real-record GPX fixtures. These files were obtained
+ // from tkrajina/gpxpy (Apache-2.0); see the committed fixture README.
+ // They are not synthetic and are not user-uploaded private GPS histories.
+ async function p26ConvertPublicGpx(source,name,target){
+  return await convertGdal(gdal,new File([source],name,{type:'application/gpx+xml'}),'gpx',target);
+ }
+ function p26ReadKml(bytes,target){
+  if(target==='kml')return Promise.resolve(new TextDecoder().decode(bytes));
+  return JSZip.loadAsync(bytes).then(zip=>zip.file('doc.kml')?.async('string'));
+ }
+ await mark('P26 publicly archived Garmin eTrex 20x real GPX with 104 points to KML',async()=>{
+  const file=new File([realEtrexGpx],'eTrex20x-from-public-gpxpy.gpx');
+  const converted=await convertGdal(gdal,file,'gpx','kml');
+  const kml=await p26ReadKml(converted.bytes,'kml');
+  const dom=new DOMParser().parseFromString(kml,'application/xml');
+  assert(!dom.getElementsByTagName('parsererror').length,'Public eTrex GPX produced invalid KML');
+  const tracks=dom.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','Track');
+  const times=dom.getElementsByTagName('when');
+  const coords=dom.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','coord');
+  assert(tracks.length===1,'Public eTrex time track was not emitted');
+  assert(times.length===104&&coords.length===104,'Public eTrex 104 timestamps not paired to 104 points');
+  const quality=await createGISQualityReport(file,'gpx',converted.bytes,'kml');
+  for(const key of ['gpx-logical-features','gpx-line-geometry','gpx-timed-track']){
+   const check=quality.checks.find(c=>c.id===key);
+   assert(check?.status==='pass','Public eTrex regression failed: '+key+' '+JSON.stringify(check));
+  }
+  assertNoDetectedCriticalDataLoss(quality);
+  return {source:'Apache-2.0 upstream public real eTrex sample',points:104,timedTracks:tracks.length,
+   outputBytes:converted.bytes.length,validation:'independent structure/time'};
+ });
+ await mark('P26 public Training Center GPX containing empty second segment does not create extra vertices',async()=>{
+  const file=new File([realEmptySegmentGpx],'training-center-empty-segment.gpx');
+  const out=await convertGdal(gdal,file,'gpx','kml');
+  const xml=await p26ReadKml(out.bytes,'kml');
+  const dom=new DOMParser().parseFromString(xml,'application/xml');
+  assert(!dom.getElementsByTagName('parsererror').length,'Training Center GPX KML invalid');
+  const gx=Array.from(dom.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','coord')).length;
+  const plain=[...xml.matchAll(/<LineString\b[^>]*>[\s\S]*?<coordinates\b[^>]*>([\s\S]*?)<\/coordinates>[\s\S]*?<\/LineString>/gi)]
+    .reduce((count,x)=>count+x[1].trim().split(/\s+/).filter(Boolean).length,0);
+  assert(gx+plain===9,'Empty GPX segment introduced or lost source vertices: '+(gx+plain));
+  const quality=await createGISQualityReport(file,'gpx',out.bytes,'kml');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {source:'Apache-2.0 public Training Center sample',sourceVertices:9,outputVertices:gx+plain,
+   zeroLengthInputSegments:1,qualityStatus:quality.status};
+ });
+ await mark('P26 public Runkeeper waypoint with Garmin-style extension remains an ordinary KML Point',async()=>{
+  const file=new File([realWaypointGpx],'runkeeper-garmin-waypoint.gpx');
+  const converted=await convertGdal(gdal,file,'gpx','kml');
+  const xml=await p26ReadKml(converted.bytes,'kml');
+  const dom=new DOMParser().parseFromString(xml,'application/xml');
+  assert(!dom.getElementsByTagName('parsererror').length,'Waypoint KML XML invalid');
+  const points=dom.getElementsByTagName('Point');
+  const tracks=dom.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','Track');
+  assert(points.length===1&&tracks.length===0,'Public Garmin-extension waypoint changed into a track or duplicated');
+  const quality=await createGISQualityReport(file,'gpx',converted.bytes,'kml');
+  assert(quality.checks.find(c=>c.id==='gpx-logical-features')?.status==='pass',
+    'Waypoints logical features no longer match');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {source:'Apache-2.0 public Garmin-extension waypoint fixture',waypoints:points.length,
+    exportedTimedTracks:tracks.length,metadataStatus:quality.checks.find(c=>c.id==='gpx-vertex-metadata')?.status};
+ });
+ await mark('P26 public eTrex GPX to KMZ prepares a real Chromium Blob file download',async()=>{
+  const input=new File([realEtrexGpx],'public-eTrex20x.gpx');
+  const converted=await convertGdal(gdal,input,'gpx','kmz');
+  const archive=await JSZip.loadAsync(converted.bytes);
+  const xml=await archive.file('doc.kml')?.async('string');
+  assert(xml?.includes('<gx:Track>'),'KMZ download would not contain a timed GPX track');
+  const sha=await crypto.subtle.digest('SHA-256',converted.bytes);
+  const digest=Array.from(new Uint8Array(sha),b=>b.toString(16).padStart(2,'0')).join('');
+  const blob=new Blob([converted.bytes],{type:'application/vnd.google-earth.kmz'});
+  const objectUrl=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=objectUrl;a.download='p26-public-etrex20x.kmz';
+  a.dataset.p26Download='true';
+  a.textContent='P26 real browser KMZ download';
+  document.body.appendChild(a);
+  // The Playwright gate clicks this actual anchor under a browser user gesture,
+  // receives the real download, and compares byte-level SHA-256.
+  return {downloadName:a.download,sha256:digest,downloadSize:converted.bytes.length,
+    source:'public eTrex GPX (not synthetic)',downloadKind:'KMZ archive'};
+ });
+ await mark('P26 repeated long-track local conversion and Blob round-trip with heap evidence',async()=>{
+  const gpx=p25BrowserGpx({segments:1,pointsPerSegment:3500,extensions:true});
+  const file=new File([gpx],'p26-longtrack-repeat.gpx');
+  const startHeap=performance.memory?.usedJSHeapSize??null;
+  const outputs=[],iterations=3;
+  for(let iteration=0;iteration<iterations;iteration++){
+   const converted=await convertGdal(gdal,file,'gpx','kmz');
+   const zip=await JSZip.loadAsync(converted.bytes);
+   const kml=await zip.file('doc.kml')?.async('string');
+   assert((kml?.match(/<gx:coord>/g)||[]).length===3500,'Repeat KMZ output missing point coordinates');
+   const blob=new Blob([converted.bytes],{type:converted.mime});
+   const url=URL.createObjectURL(blob);
+   try {
+    const fromBlob=new Uint8Array(await (await fetch(url)).arrayBuffer());
+    assert(fromBlob.length===converted.bytes.length,'Local Blob size diverged');
+    const before=new Uint8Array(await crypto.subtle.digest('SHA-256',converted.bytes));
+    const after=new Uint8Array(await crypto.subtle.digest('SHA-256',fromBlob));
+    assert(before.every((v,i)=>v===after[i]),'Local Blob byte digest diverged');
+    outputs.push(fromBlob.length);
+   }finally{URL.revokeObjectURL(url);}
+  }
+  const endHeap=performance.memory?.usedJSHeapSize??null;
+  return {source:'synthetic-device-shaped GPX',iterations,verticesPerIteration:3500,
+    validRoundTripSizes:outputs,heapUsedBeforeBytes:startHeap,heapUsedAfterBytes:endHeap,
+    heapNote:'Chromium JS heap snapshot only, not process RSS or mobile device memory certification'};
+ });
+
+ await mark('P26 GDAL/WASM recovers after malformed GPX and converts a public real track',async()=>{
+  const invalid=new File(['not a valid GPX XML document'],'p26-malformed.gpx');
+  let rejected=false;
+  try{await convertGdal(gdal,invalid,'gpx','kml')}catch{rejected=true}
+  assert(rejected,'Malformed GPX was not rejected by the browser conversion engine');
+  // The same GDAL instance must recover without a page refresh or Worker
+  // reinitialization, rather than leaking stale files or corrupting state.
+  const file=new File([realEtrexGpx],'p26-recovery-public-real.gpx');
+  const converted=await convertGdal(gdal,file,'gpx','kml');
+  const doc=new DOMParser().parseFromString(new TextDecoder().decode(converted.bytes),'application/xml');
+  assert(!doc.getElementsByTagName('parsererror').length,'KML invalid after previous failed GPX job');
+  const coords=doc.getElementsByTagNameNS('http://www.google.com/kml/ext/2.2','coord');
+  const times=doc.getElementsByTagName('when');
+  assert(coords.length===104&&times.length===104,'GDAL runtime did not recover full 104-point timed conversion');
+  const quality=await createGISQualityReport(file,'gpx',converted.bytes,'kml');
+  assert(quality.checks.find(c=>c.id==='gpx-timed-track')?.status==='pass',
+    'Timestamp integrity not preserved following failed job');
+  assertNoDetectedCriticalDataLoss(quality);
+  return {rejectedMalformedSource:true,recoveredWithoutReload:true,verifiedPublicTrackVertices:coords.length};
+ });
 
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
