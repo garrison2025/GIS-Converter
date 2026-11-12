@@ -94,6 +94,42 @@ jobs:
             site/wrangler-pages-result.json
             site/package-lock.json
           if-no-files-found: warn
+  seo-activation-dry-run:
+    name: P30 isolated custom-domain SEO build rehearsal (never deployed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install pinned dependencies for offline production SEO build
+        run: npm ci --no-audit --no-fund
+      - name: Build isolated SEO launch package using only the reserved .example domain
+        run: npm run build:pages
+        env:
+          GIS_SEO_LAUNCH: approved
+          GIS_PUBLIC_ORIGIN: https://gis-launch.example
+          GIS_SEO_TEST_MODE: '1'
+      - name: Verify 20 production canonical URLs, XML sitemap, host-specific noindex and fail-closed conditions
+        run: npm run smoke:seo-rehearsal
+        env:
+          GIS_SEO_LAUNCH: approved
+          GIS_PUBLIC_ORIGIN: https://gis-launch.example
+          GIS_SEO_TEST_MODE: '1'
+      - name: Store non-deployed SEO launch test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p30-isolated-seo-launch-test
+          path: |
+            site/p30-seo-production-rehearsal.json
+            site/pages-preview-package-report.json
+            site/dist/release.json
+          if-no-files-found: warn
   billing-ledger-offline:
     runs-on: ubuntu-latest
     timeout-minutes: 8
