@@ -33,6 +33,8 @@ jobs:
         run: npm run smoke:preview-boundaries
       - name: P39 independently match WGS84 point coordinates and block silent interior-point loss
         run: npm run smoke:point-fidelity
+      - name: P40 inspect actual complex 2D GIS geometry line vertices holes and multipart structure
+        run: npm run smoke:complex-geometry
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
