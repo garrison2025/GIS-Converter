@@ -43,9 +43,11 @@ try{
    assert(!titles.has(title),'Duplicate SEO title: '+title);
    assert(!descriptions.has(description),'Duplicate SEO description');
    titles.add(title);descriptions.add(description);
-   assert(title.includes(source.toUpperCase())&&title.includes(target.toUpperCase()),
+   // Branded format names use canonical mixed case, e.g. "GeoJSON".
+   // SEO intent matching is case-insensitive without rewriting page copy.
+   assert(title.toLowerCase().includes(source)&&title.toLowerCase().includes(target),
     'Title not aligned with route intent');
-   assert(h1.includes(source.toUpperCase())&&h1.includes(target.toUpperCase()),
+   assert(h1.toLowerCase().includes(source)&&h1.toLowerCase().includes(target),
     'H1 not aligned with route intent');
    assert(page.includes('name="robots" content="noindex,nofollow"'),
     'Preview route accidentally marked indexable');
