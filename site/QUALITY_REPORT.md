@@ -6,7 +6,7 @@ A local, **bounded structural comparison** is produced *inside* the existing con
 - Independently parse recognized GeoJSON `FeatureCollection` objects, CSV rows with longitude/latitude, single-point KML Placemarks, simple GPX waypoints, KMZ KML contents, and zipped SHP/SHX/DBF metadata.
 - Compare input vs output feature counts only when both inspectors can structurally account for their data.
 - Compare WGS84 point bounds only when both coordinate systems can be inferred safely and geometry types are supported.
-- Flag discrepancies as **Review** instead of manufacturing a green certificate. Return **Unavailable** for unknown projections, GPX tracks, complicated KML, mixed geometry cases and unsupported formats.
+- Flag discrepancies as **Review** instead of manufacturing a green certificate. Return **Unavailable** for unknown projections, detailed GPX track geometry comparisons, complicated KML, mixed geometry cases and unsupported formats. For GPX→KML/KMZ, a narrower logical feature-count check is available.
 - Report has no source feature properties, names, user files or personally identifying location details beyond a numeric bounding box, which is **local and can itself be sensitive**. The report is not uploaded automatically.
 
 ### Not certified
@@ -19,3 +19,11 @@ Mixed point/line/polygon GeoJSON geometry families are rejected before attemptin
 
 ### P17 Shapefile field compatibility warnings
 For GeoJSON→Shapefile, the report scans source property **names and types** within a bounded set and warns about UTF-8 field names over 10 bytes, possible first-ten-byte collisions, or object/list properties. Only counts are exposed in the local JSON report, not source keys or values. A clean schema scan **does not prove field values are preserved**; Shapefile DBF has other field type/width restrictions. See GDAL's official ESRI Shapefile/DBF driver reference. The conversion is not withheld for metadata-name warnings alone.
+
+### P20 GPX logical-layer protection and tested samples
+- GDAL's GPX reader exposes three logical feature layers (`waypoints`, `routes`, `tracks`) plus two auxiliary vertex layers (`route_points`, `track_points`). Exporting only the logical layers to KML/KMZ prevents auxiliary vertices from being emitted as duplicate standalone point features.
+- A browser-local independent `gpx-logical-features` check compares the count of source waypoints + routes + tracks against output KML Placemarks; an independently detected count mismatch withholds the download. Invalid or unsupported cases are not marked certified.
+- Real Chromium/GDAL QA fixture: **2 waypoints + 2 routes + 2 tracks** (one track has two segments) yielded **6 Placemarks, 5 lines and 10 route/track vertices** in each of KML and KMZ. Names and each synthetic vertex coordinate are individually tested in the regression suite. This does not establish accurate preservation for every GPX extension, track-point time, elevation, large or malformed dataset.
+- Independent sample EPSG:32650 UTM zone 50N Shapefile→GeoJSON roundtrip returned longitude/latitude within `0.0001°` of the WGS84 input. This is a single synthetic location and **not** general CRS certification.
+- Two-record GeoJSON→Shapefile→GeoJSON QA checks UTF-8 Chinese strings, integer and decimal properties. DBF null values, arbitrary field names/types, widths and coercion remain **uncertified**. Do not infer production-safe attribute fidelity from the fixture.
+- The production website remains a browser-local noindex engineering preview; billing is not activated. Cloudflare public deployment must be checked separately from GitHub CI.
