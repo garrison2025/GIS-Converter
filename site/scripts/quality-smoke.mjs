@@ -18,7 +18,7 @@ try{
  await page.waitForFunction(()=>document.body.dataset.done==='true',{timeout:150000});
  report=await page.evaluate(()=>window.__qualityResult);
  report.pageErrors=errors;
- if(report.status!=='PASSED'||report.cases.length!==29||errors.length)throw Error('GIS quality gate failed: '+JSON.stringify(report));
+ if(report.status!=='PASSED'||report.cases.length!==30||errors.length)throw Error('GIS quality gate failed: '+JSON.stringify(report));
  // P26: actual Playwright-triggered browser download, not a Blob fetch
  // pretending to be a user file download. Verify bytes and filename against
  // independent in-page GDAL output SHA-256.
