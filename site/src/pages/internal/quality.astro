@@ -298,6 +298,57 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {dbfRecords:1,dbfBytes:bytes.length,headerLength,recordLength,dbfValueRisk:risk.status};
  });
 
+
+ await mark('P22 actual GDAL-produced UTF-8 DBF agrees with safe GeoJSON text and numeric values',async()=>{
+  const data={type:'FeatureCollection',features:[
+   {type:'Feature',properties:{Code:'A01',Label:'北京公园',Count:12,Score:12.75},
+    geometry:{type:'Point',coordinates:[116.4,39.9]}},
+   {type:'Feature',properties:{Code:'B02',Label:'深圳公园',Count:-3,Score:-2.125},
+    geometry:{type:'Point',coordinates:[114.1,22.5]}}
+  ]};
+  const file=new File([JSON.stringify(data)],'p22-clean.geojson');
+  const converted=await convertGdal(gdal,file,'geojson','shp');
+  const report=await createGISQualityReport(file,'geojson',converted.bytes,'shp');
+  const value=report.checks.find(c=>c.id==='dbf-attribute-values');
+  assert(value?.status==='pass','GDAL DBF attributes did not match: '+JSON.stringify(value));
+  assertNoDetectedCriticalDataLoss(report);
+  return {dbfStatus:value.status,detail:value.detail};
+ });
+
+ await mark('P22 altered GDAL-produced DBF field prevents output download',async()=>{
+  const data={type:'FeatureCollection',features:[{type:'Feature',
+   properties:{Code:'A01',Label:'北京公园',Count:12,Score:12.75},
+   geometry:{type:'Point',coordinates:[116.4,39.9]}}]};
+  const file=new File([JSON.stringify(data)],'p22-tamper.geojson');
+  const converted=await convertGdal(gdal,file,'geojson','shp');
+  const zip=await JSZip.loadAsync(converted.bytes);
+  const dbfName=Object.keys(zip.files).find(name=>name.toLowerCase().endsWith('.dbf'));
+  assert(dbfName,'Real Shapefile lacks DBF');
+  const bytes=await zip.file(dbfName).async('uint8array');
+  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+  const headerLength=view.getUint16(8,true),recordLength=view.getUint16(10,true);
+  let keyOffset=-1,fieldOffset=1;
+  for(let off=32;off+32<=headerLength-1;off+=32){
+   const nameBytes=bytes.subarray(off,off+11),nul=nameBytes.indexOf(0);
+   const name=new TextDecoder().decode(nul>=0?nameBytes.subarray(0,nul):nameBytes).trim();
+   if(name==='Code')keyOffset=fieldOffset;
+   fieldOffset+=bytes[off+16];
+  }
+  assert(keyOffset>=0&&headerLength+recordLength<=bytes.length,'Cannot locate Code field in actual GDAL DBF');
+  const at=headerLength+keyOffset;
+  assert(bytes[at]===65&&bytes[at+1]===48&&bytes[at+2]===49,'Unexpected field location');
+  bytes[at]=90; // Z01 instead of A01; valid DBF encoding but definite value change.
+  zip.file(dbfName,bytes);
+  const modified=new Uint8Array(await zip.generateAsync({type:'uint8array'}));
+  const report=await createGISQualityReport(file,'geojson',modified,'shp');
+  const value=report.checks.find(c=>c.id==='dbf-attribute-values');
+  assert(value?.status==='review','Tampered DBF field was not detected: '+JSON.stringify(value));
+  let blocked=false;
+  try{assertNoDetectedCriticalDataLoss(report)}catch(error){blocked=error.code==='DATA_LOSS'}
+  assert(blocked,'Corrupted DBF was not withheld');
+  return {dbfStatus:value.status,withheld:true};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}

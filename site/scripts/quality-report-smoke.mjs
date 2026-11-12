@@ -273,6 +273,109 @@ await test('P21 over-limit GPX XML remains unavailable rather than consuming unb
  assert.equal(r.status,'unavailable');
  assert.equal(r.metadata.status,'unavailable');
 });
+
+// P22: Construct independent binary DBF fixtures without relying on GDAL's reader.
+async function p22Zip(fields,records,{cpg=true}={}){
+ const bytesEncoder=new TextEncoder();
+ const head=32+fields.length*32+1,recLen=1+fields.reduce((n,f)=>n+f.width,0);
+ const dbf=new Uint8Array(head+recLen*records.length+1),dv=new DataView(dbf.buffer);
+ dbf[0]=3;dv.setUint32(4,records.length,true);dv.setUint16(8,head,true);dv.setUint16(10,recLen,true);
+ for(let i=0;i<fields.length;i++){
+  const f=fields[i],at=32+i*32;
+  dbf.set(bytesEncoder.encode(f.name),at);
+  dbf[at+11]=f.type.charCodeAt(0);
+  dbf[at+16]=f.width;dbf[at+17]=f.decimal||0;
+ }
+ dbf[head-1]=0x0d;
+ records.forEach((rec,row)=>{
+  let off=head+row*recLen;dbf[off++]=0x20;
+  for(const f of fields){
+   const raw=String(rec[f.name]??'');
+   const encoded=bytesEncoder.encode(raw);
+   if(encoded.length>f.width)throw Error('Test record field exceeds its width: '+f.name);
+   const b=new Uint8Array(f.width).fill(0x20);
+   b.set(encoded,f.type==='C'?0:f.width-encoded.length);
+   dbf.set(b,off);off+=f.width;
+  }
+ });
+ dbf[dbf.length-1]=0x1a;
+ const zip=new JSZip();zip.file('data.dbf',dbf);if(cpg)zip.file('data.cpg','UTF-8');
+ return new Uint8Array(await zip.generateAsync({type:'uint8array'}));
+}
+const p22Fields=[{name:'Code',type:'C',width:8},{name:'Label',type:'C',width:28},
+ {name:'Count',type:'N',width:8,decimal:0},{name:'Score',type:'N',width:14,decimal:4}];
+const p22Input={type:'FeatureCollection',features:[
+ {type:'Feature',properties:{Code:'A01',Label:'北京公园',Count:12,Score:12.75},
+  geometry:{type:'Point',coordinates:[116.4,39.9]}},
+ {type:'Feature',properties:{Code:'B02',Label:'深圳公园',Count:-3,Score:-2.125},
+  geometry:{type:'Point',coordinates:[114.1,22.5]}}
+]};
+const p22Rows=p22Input.features.map(f=>f.properties);
+await test('P22 independently parsed UTF-8 DBF safe fields and values match',async()=>{
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(p22Fields,p22Rows),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'pass');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('P22 altered DBF Chinese text is withheld',async()=>{
+ const rows=p22Rows.map(row=>({...row}));rows[1].Label='深圳公園';
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(p22Fields,rows),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+ assert(!JSON.stringify(r).includes('深圳公園'));
+});
+await test('P22 numeric DBF precision loss is withheld',async()=>{
+ const rows=p22Rows.map(row=>({...row}));rows[1].Score=-2.1;
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(p22Fields,rows),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P22 missing DBF field is withheld only when comparable source values exist',async()=>{
+ const fields=p22Fields.filter(f=>f.name!=='Code'),rows=p22Rows.map(({Code,...rest})=>rest);
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(fields,rows),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P22 truncated DBF text is independently detected',async()=>{
+ const fields=p22Fields.map(f=>f.name==='Label'?{...f,width:4}:f);
+ const rows=p22Rows.map(r=>({...r,Label:'test'}));
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(fields,rows),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P22 null DBF values remain unavailable and are not falsely certified',async()=>{
+ const obj=structuredClone(p22Input);obj.features[0].properties.Label=null;
+ const rows=p22Rows.map(r=>({...r}));rows[0].Label='';
+ const r=await createGISQualityReport(makeFile(JSON.stringify(obj)),'geojson',
+   await p22Zip(p22Fields,rows),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'unavailable');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('P22 no DBF code-page marker remains unavailable rather than triggering false loss',async()=>{
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(p22Fields,p22Rows,{cpg:false}),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'unavailable');
+});
+await test('P22 invalid DBF record byte bounds remain unavailable',async()=>{
+ const zip=await JSZip.loadAsync(await p22Zip(p22Fields,p22Rows));
+ const dbf=await zip.file('data.dbf').async('uint8array');
+ new DataView(dbf.buffer).setUint16(10,1,true);
+ zip.file('data.dbf',dbf);
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+  new Uint8Array(await zip.generateAsync({type:'uint8array'})),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'unavailable');
+});
+await test('P22 DBF data count mismatch blocks download',async()=>{
+ const r=await createGISQualityReport(makeFile(JSON.stringify(p22Input)),'geojson',
+   await p22Zip(p22Fields,[p22Rows[0]]),'shp');
+ assert.equal(check(r,'dbf-attribute-values').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
