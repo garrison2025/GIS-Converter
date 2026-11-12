@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import {inspectShpToGeojsonDbfFidelity} from './shp-geojson-fidelity.mjs';
 import {inspectGeojsonToShpDbfFidelity} from './dbf-fidelity.mjs';
 import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
+import {inspectGpxTimedKml} from './gpx-timed-track.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -269,9 +270,12 @@ export async function createGISQualityReport(input,source,output,target){
    const targetText=new TextDecoder('utf-8',{fatal:true}).decode(targetBytes);
    const fidelity=inspectGpxLineFidelity(sourceText,targetText);
    add('gpx-line-geometry',fidelity.status,fidelity.detail);
+   const timed=inspectGpxTimedKml(sourceText,targetText);
+   add('gpx-timed-track',timed.status,timed.detail);
    add('gpx-vertex-metadata',fidelity.metadata.status,fidelity.metadata.detail);
   }catch{
    add('gpx-line-geometry','unavailable','GPX route/track vertex check was unable to inspect the output.');
+   add('gpx-timed-track','unavailable','GPX timestamped segment validation could not run.');
    add('gpx-vertex-metadata','unavailable','GPX point-level metadata has not been verified.');
   }
  }
@@ -322,7 +326,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');

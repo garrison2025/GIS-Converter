@@ -3,6 +3,7 @@ import {File} from 'node:buffer';
 import JSZip from 'jszip';
 import {applyGpxElevationToKml} from '../src/lib/gpx-elevation.mjs';
 import {inspectGpxLineFidelity} from '../src/lib/gpx-fidelity.mjs';
+import {enhanceGpxTimedKml,inspectGpxTimedKml} from '../src/lib/gpx-timed-track.mjs';
 import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 let passed=0;const records=[];
 const makeFile=(text,name='input.geojson')=>new File([text],name);
@@ -522,6 +523,95 @@ await test('P23 duplicate GPX visits at same XY with missing height do not inher
  const result=applyGpxElevationToKml(buf(source),buf(kml));
  assert.equal(result.applied,0);
  assert.equal(new TextDecoder().decode(result.bytes),kml);
+});
+
+
+const p24Source='<gpx version="1.1"><wpt lon="116.4" lat="39.9"/>'+
+ '<rte><rtept lon="116.3" lat="39.8"/><rtept lon="116.31" lat="39.81"/></rte>'+
+ '<trk><trkseg><trkpt lon="116.1" lat="39.5"><time>2026-11-12T01:00:00Z</time><ele>101.5</ele></trkpt>'+
+ '<trkpt lon="116.11" lat="39.51"><time>2026-11-12T01:00:05Z</time><ele>102</ele></trkpt></trkseg>'+
+ '<trkseg><trkpt lon="116.12" lat="39.52"><time>2026-11-12T01:00:10Z</time></trkpt>'+
+ '<trkpt lon="116.13" lat="39.53"><time>2026-11-12T01:00:15Z</time></trkpt></trkseg></trk>'+
+ '<trk><trkseg><trkpt lon="116.2" lat="39.6"><time>2026-11-12T02:00:00Z</time></trkpt>'+
+ '<trkpt lon="116.21" lat="39.61"/></trkseg></trk></gpx>';
+const p24Kml='<kml xmlns="http://www.opengis.net/kml/2.2"><Document>'+
+ '<Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark>'+
+ '<Placemark><LineString><coordinates>116.3,39.8 116.31,39.81</coordinates></LineString></Placemark>'+
+ '<Placemark><MultiGeometry><LineString><coordinates>116.1,39.5,101.5 116.11,39.51,102</coordinates></LineString>'+
+ '<LineString><coordinates>116.12,39.52 116.13,39.53</coordinates></LineString></MultiGeometry></Placemark>'+
+ '<Placemark><LineString><coordinates>116.2,39.6 116.21,39.61</coordinates></LineString></Placemark>'+
+ '</Document></kml>';
+await test('P24 complete-time GPX track segments become paired gx:Track while route and partial time remain lines',async()=>{
+ const transformed=enhanceGpxTimedKml(buf(p24Source),buf(p24Kml));
+ assert.equal(transformed.converted,2);
+ const xml=new TextDecoder().decode(transformed.bytes);
+ assert(xml.includes('xmlns:gx="http://www.google.com/kml/ext/2.2"'));
+ assert.equal([...xml.matchAll(/<gx:Track>/g)].length,2);
+ assert.equal([...xml.matchAll(/<when>/g)].length,4);
+ assert.equal([...xml.matchAll(/<gx:coord>/g)].length,4);
+ assert.equal([...xml.matchAll(/<LineString>/g)].length,2);
+ assert(xml.includes('116.3,39.8 116.31,39.81'));
+ assert(xml.includes('116.2,39.6 116.21,39.61'));
+ assert.equal(inspectGpxTimedKml(p24Source,xml).status,'pass');
+ const report=await createGISQualityReport(makeFile(p24Source,'timed.gpx'),'gpx',transformed.bytes,'kml');
+ assert.equal(check(report,'gpx-logical-features').status,'pass');
+ assert.equal(check(report,'gpx-line-geometry').status,'pass');
+ assert.equal(check(report,'gpx-timed-track').status,'pass');
+ assert.equal(assertNoDetectedCriticalDataLoss(report),true);
+});
+await test('P24 a changed gx timestamp is independently detected and blocks output',async()=>{
+ const upgraded=enhanceGpxTimedKml(buf(p24Source),buf(p24Kml));
+ const changed=new TextDecoder().decode(upgraded.bytes).replace('2026-11-12T01:00:05.000Z','2026-11-12T01:00:06.000Z');
+ const r=await createGISQualityReport(makeFile(p24Source,'timed.gpx'),'gpx',buf(changed),'kml');
+ assert.equal(check(r,'gpx-line-geometry').status,'pass');
+ assert.equal(check(r,'gpx-timed-track').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P24 malformed gx coord count triggers structural and timestamp loss gates',async()=>{
+ const upgraded=enhanceGpxTimedKml(buf(p24Source),buf(p24Kml));
+ const changed=new TextDecoder().decode(upgraded.bytes).replace(/<gx:coord>116.11 39.51 102<\/gx:coord>/,'');
+ const r=await createGISQualityReport(makeFile(p24Source,'timed.gpx'),'gpx',buf(changed),'kml');
+ assert.equal(check(r,'gpx-timed-track').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P24 duplicate route/track geometry disables ambiguous gx:Track upgrade',async()=>{
+ const source='<gpx><rte><rtept lon="116.1" lat="39.5"/><rtept lon="116.11" lat="39.51"/></rte>'+
+ '<trk><trkseg><trkpt lon="116.1" lat="39.5"><time>2026-11-12T01:00:00Z</time></trkpt>'+
+ '<trkpt lon="116.11" lat="39.51"><time>2026-11-12T01:01:00Z</time></trkpt></trkseg></trk></gpx>';
+ const kml='<kml><Placemark><LineString><coordinates>116.1,39.5 116.11,39.51</coordinates></LineString></Placemark></kml>';
+ const output=enhanceGpxTimedKml(buf(source),buf(kml));
+ assert.equal(output.converted,0);
+ assert.equal(new TextDecoder().decode(output.bytes),kml);
+});
+await test('P24 invalid or missing GPX point time cannot be silently interpolated',async()=>{
+ const source=p24Source.replace('2026-11-12T01:00:05Z','not-an-ISO-date');
+ const output=enhanceGpxTimedKml(buf(source),buf(p24Kml));
+ assert.equal(output.converted,1); // other complete segment only
+ const xml=new TextDecoder().decode(output.bytes);
+ assert(xml.includes('116.1,39.5,101.5 116.11,39.51,102'));
+ assert(!xml.includes('<when>not-an-ISO-date</when>'));
+});
+await test('P24 gx namespace conflict yields unchanged KML without fabricating a timeline',async()=>{
+ const kml=p24Kml.replace('<kml xmlns=', '<kml xmlns:gx="http://example.com/wrong" xmlns=');
+ const output=enhanceGpxTimedKml(buf(p24Source),buf(kml));
+ assert.equal(output.converted,0);
+ assert.equal(new TextDecoder().decode(output.bytes),kml);
+});
+await test('P24 separate gx timed track fields never appear in downloadable quality report',async()=>{
+ const upgraded=enhanceGpxTimedKml(buf(p24Source),buf(p24Kml));
+ const r=await createGISQualityReport(makeFile(p24Source,'timed.gpx'),'gpx',upgraded.bytes,'kml');
+ assert.equal(check(r,'gpx-timed-track').status,'pass');
+ assert(!JSON.stringify(r).includes('2026-11-12T01:00:00'));
+ assert(!JSON.stringify(r).includes('116.11 39.51'));
+});
+
+await test('P24 invalid calendar day never becomes a fabricated gx:Track timestamp',async()=>{
+ const source=p24Source.replace('2026-11-12T01:00:05Z','2026-02-31T01:00:05Z');
+ const output=enhanceGpxTimedKml(buf(source),buf(p24Kml));
+ const xml=new TextDecoder().decode(output.bytes);
+ assert.equal(output.converted,1);
+ assert(!xml.includes('2026-03-03T01:00:05.000Z'));
+ assert(xml.includes('116.1,39.5,101.5 116.11,39.51,102'));
 });
 
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};

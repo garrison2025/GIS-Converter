@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import {applyGpxElevationToKml} from './gpx-elevation.mjs';
+import {enhanceGpxTimedKml} from './gpx-timed-track.mjs';
 export const routes=[
 ['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
 ['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
@@ -53,7 +54,11 @@ export async function convertGdal(gdal,input,src,dst){
   if(kmlKey){
    const sourceBytes=new Uint8Array(await input.arrayBuffer());
    const patched=applyGpxElevationToKml(sourceBytes,files.get(kmlKey));
-   files.set(kmlKey,patched.bytes);
+   // Upgrade only source track segments with a complete, valid timestamp
+   // on every vertex and an unambiguous GDAL LineString correspondence.
+   // Routes, waypoints and partial-time tracks keep ordinary KML geometry.
+   const timed=enhanceGpxTimedKml(sourceBytes,patched.bytes);
+   files.set(kmlKey,timed.bytes);
   }
  }
  if(dst==='shp'){
