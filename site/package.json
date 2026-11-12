@@ -34,7 +34,9 @@
     "smoke:seo-rehearsal": "node scripts/p30-seo-production-rehearsal.mjs",
     "smoke:seo-live": "node scripts/p30-live-seo-acceptance.mjs",
     "smoke:mobile-local": "node scripts/p31-mobile-local-smoke.mjs",
-    "smoke:mobile-live": "node scripts/p31-mobile-ux-qa.mjs"
+    "smoke:mobile-live": "node scripts/p31-mobile-ux-qa.mjs",
+    "smoke:crossbrowser-local": "node scripts/p32-wrangler-crossbrowser-local.mjs",
+    "smoke:crossbrowser-live": "node scripts/live-crossbrowser-qa.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
