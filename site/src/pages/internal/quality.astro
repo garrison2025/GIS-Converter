@@ -349,6 +349,44 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {dbfStatus:value.status,withheld:true};
  });
 
+
+ await mark('P23 real GDAL Shapefile to GeoJSON reverse DBF fields match',async()=>{
+  const original={type:'FeatureCollection',features:[
+   {type:'Feature',properties:{Code:'A01',Label:'北京园区',Count:12,Score:12.75},
+    geometry:{type:'Point',coordinates:[116.4,39.9]}},
+   {type:'Feature',properties:{Code:'B02',Label:'深圳园区',Count:-3,Score:-2.125},
+    geometry:{type:'Point',coordinates:[114.1,22.5]}}
+  ]};
+  const source=await convertGdal(gdal,new File([JSON.stringify(original)],'p23-source.geojson'),'geojson','shp');
+  const file=new File([source.bytes],'p23-source.zip');
+  const exported=await convertGdal(gdal,file,'shp','geojson');
+  const quality=await createGISQualityReport(file,'shp',exported.bytes,'geojson');
+  const check=quality.checks.find(c=>c.id==='shp-geojson-attributes');
+  assert(check?.status==='pass','P23 reverse SHP attribute parity failed: '+JSON.stringify(check));
+  assertNoDetectedCriticalDataLoss(quality);
+  const rows=JSON.parse(new TextDecoder().decode(exported.bytes)).features;
+  assert(rows.length===2,'P23 source DBF row count changed');
+  assert(rows[0].properties.Label==='北京园区'&&rows[1].properties.Label==='深圳园区','Chinese DBF values missing');
+  return {dbfStatus:check.status,rows:rows.length,fields:['Code','Label','Count','Score'],quality:check.detail};
+ });
+ await mark('P23 real GDAL Shapefile-to-GeoJSON attribute mutation triggers download block',async()=>{
+  const original={type:'FeatureCollection',features:[{type:'Feature',
+   properties:{Code:'A01',Label:'北京园区',Count:12,Score:12.75},
+   geometry:{type:'Point',coordinates:[116.4,39.9]}}]};
+  const packed=await convertGdal(gdal,new File([JSON.stringify(original)],'p23-mutate.geojson'),'geojson','shp');
+  const file=new File([packed.bytes],'p23-mutate.zip');
+  const exported=await convertGdal(gdal,file,'shp','geojson');
+  const json=JSON.parse(new TextDecoder().decode(exported.bytes));
+  json.features[0].properties.Count=999;
+  const changed=new TextEncoder().encode(JSON.stringify(json));
+  const quality=await createGISQualityReport(file,'shp',changed,'geojson');
+  const fidelity=quality.checks.find(c=>c.id==='shp-geojson-attributes');
+  assert(fidelity?.status==='review','P23 failed to notice modified converted GeoJSON');
+  let blocked=false;try{assertNoDetectedCriticalDataLoss(quality)}catch(e){blocked=e.code==='DATA_LOSS'}
+  assert(blocked,'P23 modified SHP-to-GeoJSON output was released');
+  return {reverseDbfStatus:fidelity.status,withheld:true};
+ });
+
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
  finally{report.complete=true;document.body.dataset.done='true';render()}
