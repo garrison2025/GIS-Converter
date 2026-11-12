@@ -16,3 +16,6 @@ A conversion can succeed while the quality report requests review. Production GI
 
 ### P16 fail-closed protection
 Mixed point/line/polygon GeoJSON geometry families are rejected before attempting a single Shapefile output. After conversion, if independent comparable feature counts or WGS84 point bounds definitively differ, the file is withheld and the user receives an error. Unknown or unsupported comparisons remain explicitly `unavailable`; they do not claim certification. The rule currently applies only where the independent parsers can compare those invariants. This cannot guarantee every feature or attribute survived.
+
+### P17 Shapefile field compatibility warnings
+For GeoJSON→Shapefile, the report scans source property **names and types** within a bounded set and warns about UTF-8 field names over 10 bytes, possible first-ten-byte collisions, or object/list properties. Only counts are exposed in the local JSON report, not source keys or values. A clean schema scan **does not prove field values are preserved**; Shapefile DBF has other field type/width restrictions. See GDAL's official ESRI Shapefile/DBF driver reference. The conversion is not withheld for metadata-name warnings alone.
