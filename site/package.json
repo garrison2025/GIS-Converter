@@ -24,7 +24,9 @@
     "build:pages": "npm run stage:gdal && npm run pack:gdal && npm run build && npm run prepare:pages",
     "smoke:quality-report": "node scripts/quality-report-smoke.mjs",
     "smoke:all-ui": "node scripts/local-all-routes-smoke.mjs",
-    "smoke:polygon-stress": "node scripts/polygon-stress.mjs"
+    "smoke:polygon-stress": "node scripts/polygon-stress.mjs",
+    "smoke:release": "node scripts/release-gate.mjs",
+    "smoke:live-release": "node scripts/live-release-gate.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
