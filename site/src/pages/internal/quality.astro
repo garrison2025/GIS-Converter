@@ -4,6 +4,7 @@ const title='GDAL quality gate — polygon rings, Unicode and CRS reprojection';
 <!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="robots" content="noindex,nofollow"/><title>{title}</title><script is:inline src="/engine/gdal3/gdal3.js"></script></head><body><h1>{title}</h1><pre id="results">NOT_STARTED</pre>
 <script>
 import {convertGdal,makeFixture} from '../../lib/gdal-matrix.mjs';
+import {createGISQualityReport,assertNoDetectedCriticalDataLoss} from '../../lib/quality-report.mjs';
 import JSZip from 'jszip';
 const report={status:'RUNNING',cases:[],errors:[]};
 window.__qualityResult=report;
@@ -146,6 +147,94 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
    assert(/<LineString>/.test(kml),'GPX track did not become a line');
    return {outcome:'preserved',hasWaypoint:true,hasTrack:true,size:output.bytes.length};
  });
+
+
+ // P20: A GPX dataset also exposes auxiliary route_points/track_points GDAL
+ // layers. Those are NOT independent user features in KML or KMZ.
+ const gpxP20='<?xml version="1.0" encoding="UTF-8"?>'+
+  '<gpx version="1.1" creator="P20 GIS QA" xmlns="http://www.topografix.com/GPX/1/1">'+
+  '<wpt lat="39.90" lon="116.40"><name>P20 Waypoint A</name></wpt>'+
+  '<wpt lat="39.91" lon="116.41"><name>P20 Waypoint B</name></wpt>'+
+  '<rte><name>P20 Route A</name><rtept lat="39.8" lon="116.3"/><rtept lat="39.82" lon="116.32"/></rte>'+
+  '<rte><name>P20 Route B</name><rtept lat="39.7" lon="116.2"/><rtept lat="39.72" lon="116.22"/></rte>'+
+  '<trk><name>P20 Track A</name><trkseg><trkpt lat="39.6" lon="116.1"/><trkpt lat="39.62" lon="116.12"/></trkseg>'+
+  '<trkseg><trkpt lat="39.64" lon="116.14"/><trkpt lat="39.66" lon="116.16"/></trkseg></trk>'+
+  '<trk><name>P20 Track B</name><trkseg><trkpt lat="39.5" lon="116.0"/><trkpt lat="39.52" lon="116.02"/></trkseg></trk></gpx>';
+ async function verifyP20Gpx(dst){
+   const file=new File([gpxP20],'p20-multiple-features.gpx');
+   const output=await convertGdal(gdal,file,'gpx',dst);
+   let kml=dst==='kml'?new TextDecoder().decode(output.bytes):'';
+   if(dst==='kmz'){
+     const archive=await JSZip.loadAsync(output.bytes);
+     assert(Object.keys(archive.files).filter(x=>x.toLowerCase().endsWith('.kml')).length===1,'KMZ contains one KML file');
+     kml=await archive.file('doc.kml').async('string');
+   }
+   const placemarks=[...kml.matchAll(/<Placemark\b/gi)];
+   assert(placemarks.length===6,'GPX 2 waypoints + 2 routes + 2 tracks must become exactly six KML Placemarks, got '+placemarks.length);
+   for(const name of ['P20 Waypoint A','P20 Waypoint B','P20 Route A','P20 Route B','P20 Track A','P20 Track B']){
+     assert(kml.includes(name),'GPX feature omitted: '+name);
+   }
+   assert([...kml.matchAll(/<Point\b/gi)].length===2,'Route/track vertices duplicated as standalone KML points');
+   assert([...kml.matchAll(/<LineString\b/gi)].length>=4,'GPX routes and tracks not represented as lines');
+   const q=await createGISQualityReport(file,'gpx',output.bytes,dst);
+   const check=q.checks.find(x=>x.id==='gpx-logical-features');
+   assert(check?.status==='pass','Independent GPX logical feature check failed '+JSON.stringify(check));
+   assertNoDetectedCriticalDataLoss(q);
+   return {sourceLogicalFeatures:6,exportPlacemarks:placemarks.length,lineGeometries:[...kml.matchAll(/<LineString\b/gi)].length,qualityStatus:check.status,outputBytes:output.bytes.length};
+ }
+ await mark('P20 mixed GPX waypoints routes and multi-segment tracks to KML without auxiliary duplicate features',()=>verifyP20Gpx('kml'));
+ await mark('P20 mixed GPX waypoints routes and multi-segment tracks to KMZ without auxiliary duplicate features',()=>verifyP20Gpx('kmz'));
+
+ await mark('P20 EPSG:32650 UTM projected Shapefile to WGS84 coordinate precision',async()=>{
+   const source=await makeFixture('geojson');
+   const opened=await gdal.open(source);
+   const ds=opened.datasets?.[0];assert(ds,'open UTM source');
+   const pack=new JSZip();
+   try{
+     const converted=await gdal.ogr2ogr(ds,['-f','ESRI Shapefile','-t_srs','EPSG:32650','-lco','ENCODING=UTF-8'],'utm50-p20');
+     const files=Array.isArray(converted?.all)?converted.all:[converted];
+     for(const f of files){
+       const name=String(f?.local||f).split('/').pop();
+       const b=await gdal.getFileBytes(f);
+       if(b?.length)pack.file(name,b);
+     }
+   }finally{try{gdal.close(ds)}catch{}}
+   const names=Object.keys(pack.files);
+   assert(names.some(n=>n.endsWith('.prj')),'UTM .prj absent');
+   const shpName=names.find(n=>n.endsWith('.shp'));assert(shpName,'UTM .shp absent');
+   const raw=await pack.file(shpName).async('uint8array');
+   const dv=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+   const east=dv.getFloat64(112,true),north=dv.getFloat64(120,true);
+   assert(east>100000&&east<900000&&north>1000000,'SHP coordinates were not projected into UTM metres');
+   const file=new File([await pack.generateAsync({type:'uint8array'})],'utm50.zip');
+   const out=await convertGdal(gdal,file,'shp','geojson');
+   const point=JSON.parse(new TextDecoder().decode(out.bytes)).features?.[0]?.geometry?.coordinates;
+   assert(Array.isArray(point),'WGS84 point missing');
+   assert(Math.abs(point[0]-116.4)<.0001&&Math.abs(point[1]-39.9)<.0001,'UTM roundtrip exceeded coordinate tolerance');
+   return {sourceProjection:'EPSG:32650',targetProjection:'WGS84',utm:[east,north],result:point};
+ });
+
+ await mark('P20 DBF Unicode string integer and decimal roundtrip for two records',async()=>{
+   const data={type:'FeatureCollection',features:[
+     {type:'Feature',properties:{Code:'A001',Label:'北京公园',Count:12,Score:12.75,Nullable:null},geometry:{type:'Point',coordinates:[116.4,39.9]}},
+     {type:'Feature',properties:{Code:'A002',Label:'深圳城区',Count:-3,Score:-2.125,Nullable:null},geometry:{type:'Point',coordinates:[114.1,22.5]}}
+   ]};
+   const zip=await convertGdal(gdal,new File([JSON.stringify(data)],'dbf-source.geojson'),'geojson','shp');
+   const stored=await JSZip.loadAsync(zip.bytes);
+   const names=Object.keys(stored.files);
+   const cpg=names.find(n=>n.endsWith('.cpg'));
+   assert(cpg&&((await stored.file(cpg).async('string')).toUpperCase().includes('UTF-8')),'SHP UTF-8 cpg absent');
+   const roundtrip=await convertGdal(gdal,new File([zip.bytes],'p20-fields.zip'),'shp','geojson');
+   const parsed=JSON.parse(new TextDecoder().decode(roundtrip.bytes));
+   assert(parsed.features?.length===2,'DBF record count changed');
+   for(let i=0;i<2;i++){
+     const src=data.features[i].properties,got=parsed.features[i].properties;
+     assert(src.Code===got.Code&&src.Label===got.Label,'DBF text/Unicode attribute changed for record '+i);
+     assert(src.Count===got.Count&&Math.abs(src.Score-got.Score)<.000001,'DBF number attribute changed for record '+i);
+   }
+   return {records:2,fieldsVerified:['Code','Label','Count','Score'],nullable:'not certified',encoding:'UTF-8'};
+ });
+
 
  report.status=report.cases.every(x=>x.status==='PASSED')?'PASSED':'FAILED';
  }catch(e){report.status='FAILED';report.errors.push(String(e instanceof Error?e.stack:JSON.stringify(e)))}
