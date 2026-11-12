@@ -143,6 +143,55 @@ try{
   const checked=await inspectZip(d.bytes,[[116.4,39.9],[114.1,22.5],[-73.9,40.7]]);
   return {...checked,duplicateSourceNamesPreserved:true};
  });
+ await doTest('nested_shapefile_zip_outputs_in_batch_are_valid',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  await page.goto(origin+'/converter/kml-to-shp/');
+  await page.locator('#file').setInputFiles([
+   point(116.4,39.9,'one.kml'),point(114.1,22.5,'two.kml')]);
+  await convert(page);
+  const downloadedBatch=await downloaded(page,'#download');
+  const archive=await JSZip.loadAsync(downloadedBatch.bytes);
+  const manifest=JSON.parse(await archive.file('manifest.json').async('string'));
+  check(manifest.files.length===2,'Nested SHP batch lost input records');
+  for(const item of manifest.files){
+   const file=archive.file(item.outputPath);
+   check(file&&item.outputPath.endsWith('.zip'),'Shapefile output was not saved as a ZIP');
+   const inner=await JSZip.loadAsync(await file.async('uint8array'));
+   const names=Object.keys(inner.files);
+   for(const ext of ['.shp','.shx','.dbf','.prj'])
+    check(names.some(name=>name.endsWith(ext)),
+     'Nested Shapefile ZIP is missing companion '+ext);
+  }
+  return {nestedShapefiles:2,companionFilesChecked:8};
+ });
+ await doTest('nested_kmz_outputs_in_batch_have_separate_kml_documents',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  await page.goto(origin+'/converter/csv-to-kmz/');
+  await page.locator('#file').setInputFiles([
+   {name:'one.csv',mimeType:'text/csv',
+    buffer:Buffer.from('longitude,latitude,Name\n116.4,39.9,One\n')},
+   {name:'two.csv',mimeType:'text/csv',
+    buffer:Buffer.from('longitude,latitude,Name\n114.1,22.5,Two\n')}
+  ]);
+  await convert(page);
+  const downloadedBatch=await downloaded(page,'#download');
+  const zip=await JSZip.loadAsync(downloadedBatch.bytes);
+  const manifest=JSON.parse(await zip.file('manifest.json').async('string'));
+  check(manifest.files.length===2,'KMZ mini-batch count wrong');
+  const expected=[[116.4,39.9],[114.1,22.5]];
+  for(let i=0;i<2;i++){
+   const file=zip.file(manifest.files[i].outputPath);
+   check(file&&manifest.files[i].outputPath.endsWith('.kmz'),'Missing KMZ inside batch');
+   const kmz=await JSZip.loadAsync(await file.async('uint8array'));
+   const doc=kmz.file('doc.kml');
+   check(doc,'Batch KMZ missing doc.kml');
+   const kmlText=await doc.async('string');
+   check(kmlText.includes('<coordinates>')&&
+    new RegExp(expected[i][0]+'[^,<]*,'+expected[i][1]).test(kmlText),
+    'Nested KMZ contains incorrect geographic coordinates');
+  }
+  return {nestedKMZFiles:2,coordinatesChecked:true};
+ });
  await doTest('invalid_second_file_fails_without_partial_zip_then_recovers',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
   await page.goto(origin+'/converter/kml-to-geojson/');
@@ -242,7 +291,7 @@ try{
   return {cancelWorks:true,workers};
  });
  check(report.browserErrors.length===0,'Uncaught browser exception(s): '+report.browserErrors);
- report.status=report.failed.length===0&&report.cases.length===9?'PASSED':'FAILED';
+ report.status=report.failed.length===0&&report.cases.length===11?'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
