@@ -624,7 +624,7 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   return {source:'Apache-2.0 public Garmin-extension waypoint fixture',waypoints:points.length,
     exportedTimedTracks:tracks.length,metadataStatus:quality.checks.find(c=>c.id==='gpx-vertex-metadata')?.status};
  });
- await mark('P26 public eTrex GPX to KMZ initiates a real Chromium Blob file download',async()=>{
+ await mark('P26 public eTrex GPX to KMZ prepares a real Chromium Blob file download',async()=>{
   const input=new File([realEtrexGpx],'public-eTrex20x.gpx');
   const converted=await convertGdal(gdal,input,'gpx','kmz');
   const archive=await JSZip.loadAsync(converted.bytes);
@@ -636,9 +636,11 @@ async function mark(label,fn){try{const data=await fn();report.cases.push({name:
   const objectUrl=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=objectUrl;a.download='p26-public-etrex20x.kmz';
-  document.body.appendChild(a);a.click();a.remove();
-  // The Playwright gate independently receives the browser download event,
-  // reads actual downloaded bytes, and compares SHA-256 against this digest.
+  a.dataset.p26Download='true';
+  a.textContent='P26 real browser KMZ download';
+  document.body.appendChild(a);
+  // The Playwright gate clicks this actual anchor under a browser user gesture,
+  // receives the real download, and compares byte-level SHA-256.
   return {downloadName:a.download,sha256:digest,downloadSize:converted.bytes.length,
     source:'public eTrex GPX (not synthetic)',downloadKind:'KMZ archive'};
  });
