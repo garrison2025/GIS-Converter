@@ -1,0 +1,55 @@
+name: GIS Converter P33 public native GDAL desktop interoperability (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p33-public-native-gis-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p33-public-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact merged P33 main SHA on live Cloudflare Pages
+        run: node scripts/p33-await-live-release.mjs
+      - name: Install independent system native GDAL OGR utilities
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gdal-bin
+          ogrinfo --version
+      - name: Install pinned browser QA dependencies and Chromium
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+      - name: Verify deployed SHA, Pages branch and preview noindex release
+        run: npm run smoke:live-release
+      - name: Native GDAL verifies six actual public browser-generated GIS files and EPSG3857 input
+        run: npm run smoke:native-live
+      - name: Regression of all 19 public GIS browser conversion and download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Archive real native GIS public interoperability evidence including failure details
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p33-public-native-desktop-evidence
+          path: |
+            site/p33-live-deployment-wait.json
+            site/p33-native-live-results.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Independent CLI reader, not actual QGIS GUI or Google Earth Pro playback.
+# Only public test files; no Cloudflare account, DNS, payment, indexing or deployment write operations.

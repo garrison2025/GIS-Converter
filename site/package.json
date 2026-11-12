@@ -36,7 +36,9 @@
     "smoke:mobile-local": "node scripts/p31-mobile-local-smoke.mjs",
     "smoke:mobile-live": "node scripts/p31-mobile-ux-qa.mjs",
     "smoke:crossbrowser-local": "node scripts/p32-wrangler-crossbrowser-local.mjs",
-    "smoke:crossbrowser-live": "node scripts/live-crossbrowser-qa.mjs"
+    "smoke:crossbrowser-live": "node scripts/live-crossbrowser-qa.mjs",
+    "smoke:native-local": "node scripts/p33-wrangler-native-local.mjs",
+    "smoke:native-live": "node scripts/p33-native-ogr-compat.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
