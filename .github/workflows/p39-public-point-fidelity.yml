@@ -33,7 +33,7 @@ jobs:
         run: npm run smoke:point-fidelity
       - name: Verify deployed SHA and noindex engineering-preview security gate
         run: npm run smoke:live-release
-      - name: Check 15 converted-output previews including P39 real CSV-to-KML quality download
+      - name: Check 16 converted-output previews including P40 real KML line and SHP hole integrity
         run: npm run smoke:preview-live
       - name: Recheck 19 public GIS converter routes and real downloads
         run: node scripts/live-all-routes.mjs
