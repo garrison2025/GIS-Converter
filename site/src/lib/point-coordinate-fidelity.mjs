@@ -143,16 +143,32 @@ async function readPoints(bytes,format){
  if(format==='gpx')return gpxPoints(data);
  error('Format not supported for independent point comparison');
 }
-const sorted=arr=>[...arr].sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
 const near=(a,b)=>Math.abs(a[0]-b[0])<=TOL&&Math.abs(a[1]-b[1])<=TOL;
-function ambiguous(points){
- // A pair of very close points could reorder after serialization and yield
- // a false mismatch in a lexicographic comparison. Fail closed instead.
- for(let i=1;i<points.length;i++){
-  if(Math.abs(points[i][0]-points[i-1][0])<=TOL*4)
-   return true;
+const bucket=p=>[Math.floor(p[0]/TOL),Math.floor(p[1]/TOL)];
+const cell=(x,y)=>x+','+y;
+function matchPoints(before,after){
+ // Index output points by 2D cells; point order can change during GDAL
+ // conversion. Neighbouring cells handle decimal serialization rounding.
+ const cells=new Map(),used=new Set();
+ after.forEach((p,i)=>{
+  const [x,y]=bucket(p),key=cell(x,y);
+  if(!cells.has(key))cells.set(key,[]);
+  cells.get(key).push(i);
+ });
+ let misses=0;
+ for(const p of before){
+  const [x,y]=bucket(p),candidates=[];
+  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+   for(const i of cells.get(cell(x+dx,y+dy))||[])
+    if(!used.has(i)&&near(p,after[i]))candidates.push(i);
+  }
+  // Repeated / near-duplicate coordinates can have several valid pairings.
+  // Rather than claim definite loss based on a greedy matching, skip.
+  if(candidates.length>1)return {status:'unavailable',misses};
+  if(candidates.length===0)misses++;
+  else used.add(candidates[0]);
  }
- return points.some(p=>Math.abs(Math.abs(p[0])-180)<=TOL*4);
+ return {status:misses||used.size!==after.length?'review':'pass',misses};
 }
 export async function inspectPointCoordinateFidelity(sourceBytes,sourceFormat,outputBytes,targetFormat){
  if(!allowed.has(sourceFormat)||!allowed.has(targetFormat)||sourceFormat===targetFormat)
@@ -162,15 +178,19 @@ export async function inspectPointCoordinateFidelity(sourceBytes,sourceFormat,ou
   const counts=before.length+' source points / '+after.length+' output points.';
   if(before.length!==after.length)
    return {status:'review',detail:'Independent point coordinate count mismatch: '+counts+' No private coordinates disclosed.'};
-  const x=sorted(before),y=sorted(after);
-  if(ambiguous(x)||ambiguous(y))return unavailable('Point comparison skipped: longitude ordering is too dense or near the ±180° boundary for safe independent matching. '+counts);
-  const failures=x.reduce((n,p,i)=>n+(!near(p,y[i])?1:0),0);
-  return {status:failures?'review':'pass',
-   detail:(failures?'Point coordinate changes detected despite matching counts/bounds: ':
+  if(before.some(p=>Math.abs(Math.abs(p[0])-180)<=TOL*4)||
+   after.some(p=>Math.abs(Math.abs(p[0])-180)<=TOL*4))
+   return unavailable('Point comparison near ±180° cannot safely distinguish equivalent longitude conventions. '+counts);
+  const match=matchPoints(before,after);
+  if(match.status==='unavailable')
+   return unavailable('Some points are too close to pair uniquely after rounding; manual GIS verification required. '+counts);
+  return {status:match.status,
+   detail:(match.status==='review'?'Point coordinate changes detected despite matching counts/bounds: ':
     'Independent WGS84 point coordinates match within 0.000005°: ')+
-    counts+' '+failures+' coordinate mismatches. Original coordinate values are never added to this report.'};
- }catch(e){
-  return unavailable('Independent point-coordinate verification unavailable: '+
-   String(e?.message||e).slice(0,160)+'. This is not a pass or a confirmed loss.');
+    counts+' '+match.misses+' unmatched input points. Original coordinate values are never added to this report.'};
+ }catch{
+  // XML/JSON parsing errors can contain user input snippets. Never serialize
+  // raw exception messages into a downloadable quality report.
+  return unavailable('Independent point-coordinate verification unavailable for this input/output geometry, encoding, CRS or inspection bound. This is not a pass or confirmed loss.');
  }
 }
