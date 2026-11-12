@@ -481,6 +481,25 @@ await test('P23 oversized GPX elevation inspector stays unavailable and leaves o
  assert.equal(new TextDecoder().decode(patched.bytes),kml);
 });
 
+await test('P23 XML comments and CDATA cannot smuggle fake GPX elevation',async()=>{
+ const source='<gpx><!-- <wpt lon="116.4" lat="39.9"><ele>999</ele></wpt> -->'+
+  '<wpt lon="116.4" lat="39.9"><name><![CDATA[<ele>500</ele>]]></name>'+
+  '<ele>90.125</ele></wpt></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,1);
+ assert(new TextDecoder().decode(patched.bytes).includes('116.4,39.9,90.125'));
+});
+await test('P23 GPX extension ele must never override actual point elevation',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9">'+
+  '<extensions><sensor:ele>9000</sensor:ele></extensions>'+
+  '<ele>90.125</ele></wpt></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const patched=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(patched.applied,1);
+ assert(new TextDecoder().decode(patched.bytes).includes('116.4,39.9,90.125'));
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
