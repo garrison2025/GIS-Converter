@@ -1,0 +1,51 @@
+name: GIS Converter P40 independent complex GIS geometry public acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p40-complex-geometry-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p40-public-complex-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 34
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact merged P40 SHA on Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned dependencies and Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Verify bounded 2D geometry fidelity and withheld corrupt output
+        run: npm run smoke:complex-geometry
+      - name: Validate live SHA and noindex engineering-preview controls
+        run: npm run smoke:live-release
+      - name: Run 16 actual converted GIS output preview and report cases
+        run: npm run smoke:preview-live
+      - name: Check all 19 public conversion uploads and downloads
+        run: node scripts/live-all-routes.mjs
+      - name: Preserve exact-release and public GIS fidelity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p40-public-complex-geometry-evidence
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p35-preview-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Test-only workflow. No map APIs, user data export, credentials, payment or SEO activation.
