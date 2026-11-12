@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import JSZip from 'jszip';
 import {inspectPointCoordinateFidelity} from '../src/lib/point-coordinate-fidelity.mjs';
-import {createGISQualityReport,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
+import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 
 const bytes=s=>new TextEncoder().encode(s);
 const feature=(xy,properties={})=>({type:'Feature',geometry:{type:'Point',coordinates:xy},properties});
@@ -88,6 +88,22 @@ assert.equal(duplicates.status,'unavailable',
 const seam=await inspectPointCoordinateFidelity(
  bytes(geojson([[180,10]])),'geojson',bytes(kml([[-180,10]])),'kml');
 assert.equal(seam.status,'unavailable','Date-line coordinate equivalents are ambiguous');
+
+// The quality-report's fast structural inspector must not earn a "pass"
+// through JS Number(' ')==0, hexadecimal CSV or invalid WGS84 latitude.
+for(const [format,sourceText] of [
+ ['kml','<kml><Placemark><Point><coordinates>,12</coordinates></Point></Placemark></kml>'],
+ ['gpx','<gpx><wpt lat="12" lon=" "/></gpx>'],
+ ['csv','longitude,latitude\n0x10,12\n'],
+ ['geojson',geojson([[190,12]])]
+]){
+ const meta=await inspectGISData(format,bytes(sourceText));
+ assert.equal(meta.complete,false,
+  format+' quality inspector must reject invalid WGS84 or coerced coordinates');
+}
+const multiMeta=await inspectGISData('geojson',bytes(multipoint));
+assert.equal(multiMeta.pointOnly,false,
+ 'MultiPoint must not qualify for one-position-per-feature bbox certification');
 
 const dangerous='{"secret":"PRIVATE_PERSON_abc123",not-valid-json}';
 const failClosed=await inspectPointCoordinateFidelity(
