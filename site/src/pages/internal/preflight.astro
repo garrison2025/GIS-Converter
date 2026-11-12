@@ -188,6 +188,37 @@ const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Pla
   return {reason:msg};
  });
 
+ await test('CSV accepts standard longitude latitude and decimal zero',async()=>{
+   const f=new File(['longitude,latitude,Name\n0,0,Origin\n116.4,39.9,Beijing\n'],'points.csv');
+   const r=await preflightGISInput(f,'csv','kml');
+   if(r.coordinateRows!==2)throw Error('Expected two CSV points');
+   return r;
+ });
+ await test('CSV accepts UTF-8 BOM, quoted commas, escaped quotes, and multiline attributes',async()=>{
+   const text='\ufefflongitude,latitude,Name\r\n"116.4","39.9","Beijing, \"\"China\"\""\r\n116.5,39.8,"two\nlines"\r\n';
+   const r=await preflightGISInput(new File([text],'quotes.csv'),'csv','kmz');
+   if(r.coordinateRows!==2)throw Error('Quoted CSV points missing');
+   return r;
+ });
+ await test('CSV accepts x/y aliases and boundary coordinates',async()=>{
+   const r=await preflightGISInput(new File(['x,y\n-180,-90\n+1.8e2,+9e1\n'],'edge.csv'),'csv','kml');
+   if(r.coordinateRows!==2)throw Error('Boundary coordinate rows missing');
+   return r;
+ });
+ await test('CSV rejects missing longitude column',()=>rejects(new File(['name,latitude\na,39.9'],'no-lon.csv'),'csv','one unambiguous longitude'));
+ await test('CSV rejects competing longitude aliases',()=>rejects(new File(['lon,longitude,lat\n116,116,39'],'twolon.csv'),'csv','one unambiguous longitude'));
+ await test('CSV rejects duplicate column headings',()=>rejects(new File(['lon,lat,lon\n116,39,116'],'dup.csv'),'csv','duplicate column headings'));
+ await test('CSV rejects latitude outside range',()=>rejects(new File(['longitude,latitude\n116.4,91'],'badlat.csv'),'csv','latitude outside WGS84 bounds'));
+ await test('CSV rejects longitude outside range',()=>rejects(new File(['longitude,latitude\n181,39.9'],'badlon.csv'),'csv','longitude outside WGS84 bounds'));
+ await test('CSV rejects missing coordinates rather than silently dropping a row',()=>rejects(new File(['longitude,latitude\n116.4,39.9\n,40.2'],'missing.csv'),'csv','missing or non-decimal longitude'));
+ await test('CSV rejects inconsistent data row width',()=>rejects(new File(['lon,lat,label\n116.4,39.9,ok\n116.5,39.8'],'width.csv'),'csv','inconsistent column count'));
+ await test('CSV rejects trailing characters after a quoted cell',()=>rejects(new File(['lon,lat\n"116.4"x,39.9'],'quotes-bad.csv'),'csv','characters after a closing quote'));
+ await test('CSV rejects an unclosed quoted cell',()=>rejects(new File(['lon,lat\n"116.4,39.9'],'unclosed.csv'),'csv','unclosed quoted field'));
+ await test('CSV rejects non-UTF-8 source bytes',()=>rejects(new File([new Uint8Array([0x6c,0x6f,0x6e,0x2c,0x6c,0x61,0x74,0x0a,0xff])],'binary.csv'),'csv','valid UTF-8'));
+ await test('CSV rejects empty header-only document',()=>rejects(new File(['longitude,latitude\n'],'empty.csv'),'csv','at least one coordinate row'));
+ await test('CSV rejects nondecimal NaN coordinates',()=>rejects(new File(['lon,lat\nNaN,40'],'nan.csv'),'csv','missing or non-decimal longitude'));
+ await test('CSV rejects semicolon-delimited files rather than guessing columns',()=>rejects(new File(['longitude;latitude\n116.4;39.9'],'semi.csv'),'csv','one unambiguous longitude'));
+
  report.status=report.cases.every(c=>c.passed)?'PASSED':'FAILED';
  report.complete=true;document.body.dataset.done='true';
  document.querySelector('#results').textContent=JSON.stringify(report,null,2);
