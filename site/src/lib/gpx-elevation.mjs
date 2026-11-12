@@ -20,11 +20,11 @@ function extractElevations(gpx){
  // CDATA and comments may contain apparent GPX point tags that are text only.
  const xml=gpx.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g,'');
  const known=new Map(),ambiguous=new Set();
- const tag=/<(?:[\w.-]+:)?(?:wpt|trkpt|rtept)\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?(?:wpt|trkpt|rtept)\s*>/gi;
+ const tag=/<(?:[\w.-]+:)?(wpt|trkpt|rtept)\b([^>]*)(?<!\/)>([\s\S]*?)<\/(?:[\w.-]+:)?\1\s*>/gi;
  let count=0;
  for(const m of xml.matchAll(tag)){
   if(++count>MAX_POINTS)return null;
-  const attrs=m[1],inner=m[2];
+  const attrs=m[2],inner=m[3];
   const lon=attrs.match(/(?:^|\s)lon\s*=\s*["']([^"']+)["']/i)?.[1];
   const lat=attrs.match(/(?:^|\s)lat\s*=\s*["']([^"']+)["']/i)?.[1];
   const point=lon!==undefined&&lat!==undefined?numbers(lon,lat):null;
