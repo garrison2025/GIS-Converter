@@ -20,6 +20,15 @@ function extractElevations(gpx){
  // CDATA and comments may contain apparent GPX point tags that are text only.
  const xml=gpx.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g,'');
  const known=new Map(),ambiguous=new Set();
+ // Self-closing points have no elevation and must veto the same XY in any
+ // other visit. Otherwise a repeated no-elevation waypoint can inherit Z.
+ for(const m of xml.matchAll(/<(?:[\\w.-]+:)?(?:wpt|trkpt|rtept)\\b([^>]*?)\\s*\\/>/gi)){
+  const attrs=m[1];
+  const lon=attrs.match(/(?:^|\\s)lon\\s*=\\s*["']([^"']+)["']/i)?.[1];
+  const lat=attrs.match(/(?:^|\\s)lat\\s*=\\s*["']([^"']+)["']/i)?.[1];
+  const point=lon!==undefined&&lat!==undefined?numbers(lon,lat):null;
+  if(point)ambiguous.add(point.key);
+ }
  const tag=/<(?:[\w.-]+:)?(wpt|trkpt|rtept)\b([^>]*)(?<!\/)>([\s\S]*?)<\/(?:[\w.-]+:)?\1\s*>/gi;
  let count=0;
  for(const m of xml.matchAll(tag)){
