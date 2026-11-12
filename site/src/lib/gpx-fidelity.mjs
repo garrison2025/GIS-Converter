@@ -4,7 +4,7 @@
  * timestamps are included in downloadable quality reports.
  * This is a narrow XML structural check, not a general XML/GIS validator.
  */
-const MAX_LINES=2000, MAX_VERTICES=50000;
+const MAX_LINES=2000, MAX_VERTICES=50000, MAX_XML_CHARS=4*1024*1024;
 const stripIgnored=text=>text.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>/g,'');
 function tagBlocks(text,tag) {
  const re=new RegExp('<(?:[\\w.-]+:)?'+tag+'\\b[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?'+tag+'\\s*>','gi');
@@ -88,6 +88,11 @@ function readOutput(text) {
 // in the quality report, and this never claims precise reprojection equality.
 const signature=line=>line.map(([lon,lat])=>lon.toFixed(6)+','+lat.toFixed(6)).join(';');
 export function inspectGpxLineFidelity(gpxXml,kmlXml) {
+ if(typeof gpxXml!=='string'||typeof kmlXml!=='string'||
+    gpxXml.length>MAX_XML_CHARS||kmlXml.length>MAX_XML_CHARS) {
+  return {status:'unavailable',detail:'GPX/KML line inspection exceeded the bounded 4 Mi-character XML processing limit.',
+   metadata:{status:'unavailable',detail:'Point-level metadata inspection was skipped because the input exceeded its bounded limit.'}};
+ }
  const source=readSource(gpxXml),output=readOutput(kmlXml);
  const risk=source.risk;
  const riskTotal=risk.time+risk.elevation+risk.extensions;
