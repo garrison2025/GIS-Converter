@@ -1,0 +1,6 @@
+P28 one-shot public acceptance request.
+This marker is intentionally added exactly once in the P28 merge to main.
+The matching GitHub Actions workflow waits for the exact deployed main Git SHA,
+then runs the real Cloudflare Pages read-only release gate, browser upload/download
+smoke, and all 19 GIS conversion route download checks.
+No payment setup, account change, Cloudflare token, DNS change, or search indexing.

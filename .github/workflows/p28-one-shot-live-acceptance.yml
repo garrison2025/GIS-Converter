@@ -1,0 +1,49 @@
+name: GIS Converter P28 one-shot public Cloudflare 19-route acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p28-live-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  live-p28:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait until Cloudflare Pages exposes this exact merged main SHA
+        run: node scripts/p28-await-live-release.mjs
+      - name: Install exact Playwright and GIS test dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Read-only live SHA, robots and converter page verification
+        run: npm run smoke:live-release
+      - name: Install Chromium for actual cloud uploads and downloads
+        run: npx playwright install --with-deps chromium
+      - name: Verify production hostname and three representative browser conversions
+        run: node scripts/live-pages-qa.mjs
+      - name: Verify all 19 live public Cloudflare Pages conversion and download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Save actual public deployment evidence, including failure details
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p28-live-public-19-route-evidence
+          path: |
+            site/p28-live-deployment-wait.json
+            site/live-release-gate.json
+            site/live-pages-qa.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# P28 marker triggers once at the merge; no Cloudflare token, deploy, billing or indexing actions.
