@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {File} from 'node:buffer';
 import JSZip from 'jszip';
+import {inspectGpxLineFidelity} from '../src/lib/gpx-fidelity.mjs';
 import {createGISQualityReport,inspectGISData,assertNoDetectedCriticalDataLoss} from '../src/lib/quality-report.mjs';
 let passed=0;const records=[];
 const makeFile=(text,name='input.geojson')=>new File([text],name);
@@ -267,6 +268,11 @@ await test('P21 ordinary short scalar DBF values do not trigger new width/precis
  assert.equal(check(r,'attribute-fidelity').status,'unavailable');
 });
 
+await test('P21 over-limit GPX XML remains unavailable rather than consuming unbounded inspector memory',async()=>{
+ const r=inspectGpxLineFidelity('a'.repeat(4*1024*1024+1),'<kml/>');
+ assert.equal(r.status,'unavailable');
+ assert.equal(r.metadata.status,'unavailable');
+});
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
