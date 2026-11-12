@@ -1,0 +1,4 @@
+P32 one-shot Cloudflare public Chromium/Firefox/WebKit GIS acceptance.
+The main-merge CI must verify the exact deployed Cloudflare Pages SHA first,
+then test real browser GIS uploads, downloads, retry and 19 routes without DNS,
+indexing, payment, user data or deployment changes.
