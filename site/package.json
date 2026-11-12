@@ -31,7 +31,8 @@
     "smoke:seo-prelaunch": "node scripts/seo-prelaunch-audit.mjs",
     "smoke:complex-local": "node scripts/p29-complex-local-smoke.mjs",
     "smoke:complex-live": "node scripts/p29-live-complex-gis.mjs",
-    "smoke:seo-rehearsal": "node scripts/p30-seo-production-rehearsal.mjs"
+    "smoke:seo-rehearsal": "node scripts/p30-seo-production-rehearsal.mjs",
+    "smoke:seo-live": "node scripts/p30-live-seo-acceptance.mjs"
   },
   "dependencies": {
     "astro": "7.4.8",
