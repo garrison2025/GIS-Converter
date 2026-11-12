@@ -376,6 +376,73 @@ await test('P22 DBF data count mismatch blocks download',async()=>{
  assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
 });
 
+
+await test('P23 DBF to GeoJSON independently compares all eligible Chinese and numeric values',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const output=new TextEncoder().encode(JSON.stringify(p22Input));
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',output,'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'pass');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('P23 DBF to GeoJSON detects changed Chinese text and blocks download',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features[1].properties.Label='深圳公園';
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+ assert(!JSON.stringify(r).includes('深圳公園'));
+ assert(!JSON.stringify(r).includes('深圳公园'));
+});
+await test('P23 missing GeoJSON attribute is detected as definite loss',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);
+ delete geo.features[0].properties.Code;
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P23 numeric rounding is detected by independent DBF field comparison',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features[0].properties.Score=12.5;
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P23 source and output record count mismatch is independently blocked',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features.pop();
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+await test('P23 unknown DBF CPG cannot be certified',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows,{cpg:false});
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(p22Input)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'unavailable');
+});
+await test('P23 blank DBF fields remain unverified rather than incorrectly matching null',async()=>{
+ const rows=p22Rows.map(row=>({...row}));rows[0].Label='';
+ const src=await p22Zip(p22Fields,rows);
+ const geo=structuredClone(p22Input);geo.features[0].properties.Label=null;
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'unavailable');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+});
+await test('P23 attribute type coercion from number to string is detected',async()=>{
+ const src=await p22Zip(p22Fields,p22Rows);
+ const geo=structuredClone(p22Input);geo.features[0].properties.Score='12.75';
+ const r=await createGISQualityReport(new File([src],'source.zip'),'shp',
+  new TextEncoder().encode(JSON.stringify(geo)),'geojson');
+ assert.equal(check(r,'shp-geojson-attributes').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
