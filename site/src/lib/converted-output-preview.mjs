@@ -114,8 +114,8 @@ function fromKml(text){
  return collection(result);
 }
 function gpPoint(openTag){
- const lat=openTag.match(/\blat\s*=\s*["']([^"']*)["']/i),
-  lon=openTag.match(/\blon\s*=\s*["']([^"']*)["']/i);
+ const lat=openTag.match(/(?:^|\s)lat\s*=\s*["']([^"']*)["']/i),
+  lon=openTag.match(/(?:^|\s)lon\s*=\s*["']([^"']*)["']/i);
  if(!lat||!lon)throw Error('GPX point missing geographic coordinates');
  return [strictCoordinate(lon[1],'GPX longitude'),
   strictCoordinate(lat[1],'GPX latitude')];
