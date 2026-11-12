@@ -146,8 +146,19 @@ function fromCsv(text){
  const lon=headings.findIndex(x=>['longitude','lon','x'].includes(x));
  const lat=headings.findIndex(x=>['latitude','lat','y'].includes(x));
  if(lon<0||lat<0)throw Error('Converted CSV has no WGS84 longitude/latitude columns');
+ // Number('') is zero in JS. Reject blank/non-numeric coordinates rather
+ // than silently inventing a point at Greenwich/the equator in the preview.
+ const geographicNumber=(value,axis)=>{
+  const raw=String(value??'').trim();
+  if(!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(raw))
+   throw Error('Missing or invalid CSV '+axis+' coordinate in the preview sample');
+  const n=Number(raw);
+  if(!Number.isFinite(n))throw Error('Non-finite CSV '+axis+' coordinate');
+  return n;
+ };
  return collection(records.slice(0,MAX_FEATURES).map(r=>({
-  type:'Feature',geometry:{type:'Point',coordinates:[Number(r[lon]),Number(r[lat])]},
+  type:'Feature',geometry:{type:'Point',coordinates:[
+   geographicNumber(r[lon],'longitude'),geographicNumber(r[lat],'latitude')]},
   properties:Object.fromEntries(headings.slice(0,6).map((key,i)=>[key,r[i]||'']))
  })));
 }
@@ -201,7 +212,10 @@ async function fromShpZip(bytes){
  const zip=await JSZip.loadAsync(bytes);
  const entries=Object.keys(zip.files).filter(x=>!zip.files[x].dir);
  const shpName=entries.find(n=>n.toLowerCase().endsWith('.shp'));
- const prjName=entries.find(n=>n.toLowerCase().endsWith('.prj'));
+ // The projection file must belong to the SHP layer, not a different layer
+ // placed in the same ZIP. Preview should fail closed on ambiguous CRS.
+ const prjName=shpName&&entries.find(n=>
+  n.toLowerCase()===shpName.slice(0,-4).toLowerCase()+'.prj');
  if(!shpName||!prjName)throw Error('Shapefile ZIP missing geographic components');
  const prjFile=zip.file(prjName);
  if((prjFile._data?.uncompressedSize??Infinity)>32768)throw Error('SHP PRJ too large');
@@ -216,22 +230,28 @@ async function fromShpZip(bytes){
  if(raw.length<100)throw Error('SHP header truncated');
  const d=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
  if(d.getInt32(0,false)!==9994)throw Error('Invalid SHP format header');
- const features=[];let pos=100;
+ const features=[],dbfRows=[];let pos=100,recordIndex=0;
  while(pos+8<=raw.length&&features.length<MAX_FEATURES){
   const words=d.getInt32(pos+4,false),end=pos+8+words*2;
   if(words<2||end>raw.length)throw Error('Invalid SHP record length');
   const rec=raw.subarray(pos+8,end),type=new DataView(rec.buffer,rec.byteOffset,rec.byteLength).getInt32(0,true);
   const geom=shpGeometry(rec,type);
-  if(geom)features.push({type:'Feature',geometry:geom,properties:{}});
+  if(geom){
+   features.push({type:'Feature',geometry:geom,properties:{}});
+   dbfRows.push(recordIndex);
+  }
+  // Null Shape records still consume a DBF row. Keep the original SHP row
+  // index so a later geometry never inherits the null record's attributes.
+  recordIndex++;
   pos=end;
  }
  try{
   const dbf=await readUtf8ShapefileDbf(bytes);
-  if(dbf.count>=features.length){
+  if(dbfRows.every(row=>row<dbf.count)){
    features.forEach((f,i)=>{
     const props={};
     for(const field of dbf.fields.slice(0,6)){
-     const val=readComparableDbfValue(dbf,i,field);
+     const val=readComparableDbfValue(dbf,dbfRows[i],field);
      if(val.kind==='text'||val.kind==='number')props[field.name]=val.value;
     }
     f.properties=props;

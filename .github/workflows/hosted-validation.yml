@@ -25,6 +25,8 @@ jobs:
         run: npm run smoke:mini-batch-unit
       - name: P35 verify bounded WGS84 output vector sample, polygon holes and CRS rejection
         run: npm run smoke:preview-unit
+      - name: P36 reject false CSV zero coordinates and verify SHP Null Shape DBF row alignment
+        run: npm run smoke:preview-integrity
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file

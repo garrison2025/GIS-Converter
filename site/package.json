@@ -43,6 +43,7 @@
     "smoke:mini-batch-local": "node scripts/p34-mini-batch-local.mjs",
     "smoke:mini-batch-live": "node scripts/p34-mini-batch-qa.mjs",
     "smoke:preview-unit": "node scripts/p35-preview-unit.mjs",
+    "smoke:preview-integrity": "node scripts/p36-preview-data-integrity.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
