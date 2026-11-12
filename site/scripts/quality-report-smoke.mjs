@@ -515,6 +515,15 @@ await test('P23 earlier self-closing GPX route points cannot swallow a later ele
  assert(xml.includes('116.15,39.65</coordinates>'));
 });
 
+await test('P23 duplicate GPX visits at same XY with missing height do not inherit previous Z',async()=>{
+ const source='<gpx><wpt lon="116.4" lat="39.9"><ele>90</ele></wpt>'+
+  '<wpt lon="116.4" lat="39.9"/></gpx>';
+ const kml='<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>';
+ const result=applyGpxElevationToKml(buf(source),buf(kml));
+ assert.equal(result.applied,0);
+ assert.equal(new TextDecoder().decode(result.bytes),kml);
+});
+
 const summary={status:passed===records.length?'PASSED':'FAILED',passed,total:records.length,records};
 console.log(JSON.stringify(summary,null,2));
 if(summary.status!=='PASSED')process.exitCode=1;
