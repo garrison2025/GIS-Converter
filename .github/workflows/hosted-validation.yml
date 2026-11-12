@@ -108,6 +108,8 @@ jobs:
           node-version: 22.23.4
       - name: Install pinned dependencies for offline production SEO build
         run: npm ci --no-audit --no-fund
+      - name: Parse manual future real-domain verifier without contacting any domain
+        run: node --check scripts/p30-live-seo-acceptance.mjs
       - name: Build isolated SEO launch package using only the reserved .example domain
         run: npm run build:pages
         env:
