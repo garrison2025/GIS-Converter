@@ -1,0 +1,5 @@
+P29 public complex GIS acceptance one-time trigger.
+When merged to main, wait for public Cloudflare Pages release.json to match the exact
+main commit, then execute real Chromium complex geometry, projection, attribute,
+GPS timing and negative-conversion tests plus the existing 19 route basic matrix.
+This performs no deployment, indexing change, account modification or billing action.
