@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import {inspectShpToGeojsonDbfFidelity} from './shp-geojson-fidelity.mjs';
 import {inspectGeojsonToShpDbfFidelity} from './dbf-fidelity.mjs';
 import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
 
@@ -306,6 +307,10 @@ export async function createGISQualityReport(input,source,output,target){
   const fidelity=await inspectGeojsonToShpDbfFidelity(inputBytes,output);
   add('dbf-attribute-values',fidelity.status,fidelity.detail);
  }
+ if(source==='shp'&&target==='geojson'){
+  const fidelity=await inspectShpToGeojsonDbfFidelity(inputBytes,output);
+  add('shp-geojson-attributes',fidelity.status,fidelity.detail);
+ }
  add('attribute-fidelity','unavailable','Field types, names, values, styles and metadata are not independently verified');
  const status=checks.some(c=>c.status==='review')?'review':checks.some(c=>c.status==='unavailable')?'partial':'checked';
  return {schemaVersion:1,kind:'local-structural-quality-report',status,source,target,input:before,output:after,checks,disclaimer:'Automated structural comparison only; NOT data certification. Complex geometries, attributes, projections and rendering require independent GIS review.'};
@@ -317,7 +322,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
