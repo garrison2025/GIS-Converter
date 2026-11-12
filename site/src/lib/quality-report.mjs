@@ -4,6 +4,7 @@ import {inspectGeojsonToShpDbfFidelity} from './dbf-fidelity.mjs';
 import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
 import {inspectGpxTimedKml} from './gpx-timed-track.mjs';
 import {inspectPointCoordinateFidelity} from './point-coordinate-fidelity.mjs';
+import {inspectComplexGeometryFidelity} from './complex-geometry-fidelity.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -307,6 +308,17 @@ export async function createGISQualityReport(input,source,output,target){
    {status:'unavailable',detail:'WGS84 coordinate system not independently confirmed for both formats.'};
   add('point-coordinate-values',match.status,match.detail);
  }
+ // P40: compare source vs actual converted complex XY geometry, including
+ // every LineString vertex, multipart boundaries, polygon outer rings and
+ // holes. This check is bounded and independent of the display preview.
+ // Mixed, unsupported, ambiguous or projected GIS files are NOT certified.
+ if(new Set(['geojson','kml','kmz','shp']).has(source)&&
+    new Set(['geojson','kml','kmz','shp']).has(target)&&source!==target){
+  const fidelity=before.crs==='WGS84'&&after.crs==='WGS84'?
+   await inspectComplexGeometryFidelity(inputBytes,source,output,target):
+   {status:'unavailable',detail:'Complex WGS84 geometry comparison requires confirmed geographic CRS on both sides.'};
+  add('complex-geometry-values',fidelity.status,fidelity.detail);
+ }
  if(before.pointOnly&&after.pointOnly&&before.bbox&&after.bbox&&before.crs==='WGS84'&&after.crs==='WGS84'){
   const matches=before.bbox.every((x,i)=>eq(x,after.bbox[i]));
   add('coordinate-bounds',matches?'pass':'review',matches?'Point longitude/latitude bounds agree':'Coordinates differ: input '+before.bbox.join(', ')+'; output '+after.bbox.join(', '));
@@ -354,7 +366,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
