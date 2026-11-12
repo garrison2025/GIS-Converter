@@ -63,7 +63,13 @@ export function makeOutputGeometryPreview(raw,{source='converted-output'}={}){
   if(collection?.type!=='FeatureCollection'||!Array.isArray(collection.features))
    return unavailable('Output is not a readable GeoJSON FeatureCollection.');
   const crs=collection.crs?.properties?.name;
-  if(crs&&!/^(?:EPSG:4326|OGC:CRS84|CRS84|urn:ogc:def:crs:EPSG::4326)$/i.test(crs))
+  // Match the same explicitly known WGS84/CRS84 declarations accepted by
+  // the independent quality inspector. GDAL writes the OGC 1.3 URN in some
+  // GeoJSON outputs; this is not an unsupported projected CRS.
+  const knownWgs84=new Set(['CRS84','OGC:CRS84',
+   'URN:OGC:DEF:CRS:OGC:1.3:CRS84','EPSG:4326',
+   'URN:OGC:DEF:CRS:EPSG::4326','URN:OGC:DEF:CRS:EPSG:6.6:4326']);
+  if(crs&&!knownWgs84.has(String(crs).trim().toUpperCase()))
    return unavailable('Output CRS is not confirmed WGS84; a geographic preview would be misleading.');
   const stats={vertices:0,bbox:[Infinity,Infinity,-Infinity,-Infinity]};
   const features=[],kinds={point:0,line:0,polygon:0},sample=collection.features.slice(0,PREVIEW_MAX_FEATURES);
