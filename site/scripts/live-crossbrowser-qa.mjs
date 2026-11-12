@@ -116,8 +116,9 @@ for(const browserCase of browserCases){
    viewport:window.innerWidth,width:document.documentElement.scrollWidth}));
   assert(box.width<=box.viewport+2,'Converter has horizontal overflow '+JSON.stringify(box));
   assert(await page.locator('a.skip-link').count()===1,'Missing keyboard skip link');
-  assert((await page.locator('#file').getAttribute('aria-describedby'))==='file-info',
-   'File selector not associated with its requirements');
+  const describedBy=(await page.locator('#file').getAttribute('aria-describedby')||'').split(/\s+/);
+  assert(describedBy.includes('file-info')&&describedBy.includes('batch-help'),
+   'File selector not associated with input requirements and mini-batch limits');
   assert((await page.locator('meta[name="robots"]').getAttribute('content'))==='noindex,nofollow',
    'Converter lost preview noindex');
   entry.checks.push('converter-responsive-accessible-input-noindex');
