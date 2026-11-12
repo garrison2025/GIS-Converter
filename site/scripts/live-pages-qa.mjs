@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { chromium } from 'playwright';
 import JSZip from 'jszip';
 
-const origin='https://gis-converter.pages.dev';
+const origin=(process.env.GIS_BASE_URL||'https://gis-converter.pages.dev').replace(/\/+$/,'');
 const report={origin,checkedAt:new Date().toISOString(),status:'RUNNING',http:[],tests:[],errors:[],browserErrors:[]};
 function record(label,r){report.http.push({label,status:r.status,url:r.url,headers:{'content-type':r.headers.get('content-type'),'content-encoding':r.headers.get('content-encoding'),'cache-control':r.headers.get('cache-control'),'x-robots-tag':r.headers.get('x-robots-tag'),'cf-cache-status':r.headers.get('cf-cache-status')}})}
 function assert(x,msg){if(!x)throw Error(msg)}
