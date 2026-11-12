@@ -56,7 +56,7 @@ export function writeSeoAssets({dir='dist',env=process.env}={}){
   'https://gis-converter.pages.dev/*','  X-Robots-Tag: noindex, nofollow, noarchive','',
   'https://:version.gis-converter.pages.dev/*','  X-Robots-Tag: noindex, nofollow, noarchive',''
  ].join('\n');
- ensure(!/\/\*\s*\n\s*X-Robots-Tag:\s*noindex\b/im.test(cleanHeaders),
+ ensure(!/^\/\*\s*\r?\n\s*X-Robots-Tag:\s*noindex\b/im.test(cleanHeaders),
   'Global noindex survived activation');
  write('_headers',cleanHeaders);
  write('robots.txt','User-agent: *\nAllow: /\nSitemap: '+seo.publicOrigin+'/sitemap.xml\n');
