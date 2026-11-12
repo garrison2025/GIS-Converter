@@ -31,7 +31,7 @@ jobs:
         run: npm run smoke:live-release
       - name: Install Chromium Firefox and WebKit for real public batch download tests
         run: npx playwright install --with-deps chromium firefox webkit
-      - name: Run nine real public GIS batch ZIP file cancellation and drag-drop scenarios
+      - name: Run eleven real public GIS batch ZIP, nested SHP/KMZ, cancellation and drag-drop scenarios
         run: npm run smoke:mini-batch-live
       - name: Preserve all 19 basic single-file GIS conversion/download routes
         run: node scripts/live-all-routes.mjs
