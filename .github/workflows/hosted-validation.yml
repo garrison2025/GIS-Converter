@@ -35,6 +35,8 @@ jobs:
         run: npm run smoke:point-fidelity
       - name: P40 inspect actual complex 2D GIS geometry line vertices holes and multipart structure
         run: npm run smoke:complex-geometry
+      - name: P41 verify 3500 polygon holes and 60000 line vertices with bounded spatial matching
+        run: npm run smoke:large-geometry
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
