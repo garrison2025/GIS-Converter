@@ -75,9 +75,17 @@ try{
  const findCheck=id=>quality.checks.find(c=>c.id===id);
  check(quality.input.features===N && quality.output.features===N,'Quality report polygon feature counts differ');
  check(findCheck('feature-count')?.status==='pass','Quality report polygon feature count did not pass');
+ // P41 - independently compare ALL 3,000 actual shapefile polygon boundaries
+ // and holes, not just the four sampled vertices previously checked.
+ const independent=findCheck('complex-geometry-values');
+ check(independent?.status==='pass',
+  'P41 did not independently verify all 3000 real GDAL SHP polygons and holes: '+(independent?.detail||'missing'));
+ check(independent.detail.includes('Polygon=3000'),
+  'P41 real polygon quality report did not account for all 3000 features');
  check(findCheck('shp-field-limits')?.status==='review','Long Shapefile property names did not trigger review');
  check(findCheck('attribute-fidelity')?.status==='unavailable','Quality report falsely certified attributes');
  report.quality={status:quality.status,featuresIn:quality.input.features,featuresOut:quality.output.features,
+   complexGeometry:independent.status,inspectedPolygonHoles:N,
    fieldLimit:findCheck('shp-field-limits')?.status,attributes:findCheck('attribute-fidelity')?.status};
  const dp=page.waitForEvent('download');
  await page.locator('#download').click();
