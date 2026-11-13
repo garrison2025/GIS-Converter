@@ -83,7 +83,49 @@ try{
   await resultReady(page);
   check(await page.locator('.preview-map svg path[fill-rule="evenodd"]').count()>0,
    'Polygon with hole is not drawn with evenodd SVG fill rule');
-  return {polygonHoleDrawn:true,actualShapefileZIPPreview:true};
+  const [dl]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),
+   page.locator('#quality-download').click()
+  ]);
+  const quality=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));
+  const geom=quality.checks?.find(c=>c.id==='complex-geometry-values');
+  check(geom?.status==='pass',
+   'P40 independently reading actual downloaded SHP should verify polygon outer and hole rings: '+(geom?.detail||'missing'));
+  return {polygonHoleDrawn:true,actualShapefileZIPPreview:true,
+   independentShapefilePolygonHoleQuality:'pass'};
+ });
+ await test('p40_actual_geojson_to_kml_line_vertex_integrity_report',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  const input=JSON.stringify({type:'FeatureCollection',features:[{
+   type:'Feature',properties:{},geometry:{type:'LineString',
+    coordinates:[[20,10],[21,11.5],[22,11],[23,12]]}
+  }]});
+  const out=await submit(page,'geojson-to-kml',
+   fixture(input,'p40-polyline.geojson','application/geo+json'));
+  check(out.name.endsWith('.kml'),'Converted KML file not delivered');
+  check((out.bytes.toString('utf8').match(/<LineString>/g)||[]).length===1,
+   'Actual GDAL output should contain a line');
+  await resultReady(page);
+  const [dl]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),
+   page.locator('#quality-download').click()
+  ]);
+  const q=JSON.parse(fs.readFileSync(await dl.path(),'utf8'));
+  const geom=q.checks?.find(c=>c.id==='complex-geometry-values');
+  check(geom?.status==='pass',
+   'Actual KML line was not independently verified: '+(geom?.detail||'missing'));
+  // The legacy KML structural inspector explicitly marks non-point KML as
+  // review because it cannot fully certify complex feature structure. The
+  // new independent P40 geometry check can pass while that older, bounded
+  // inspector keeps its conservative warning; do not equate overall report
+  // status with a confirmed geometry mismatch.
+  const definite=q.checks?.filter(c=>c.status==='review'&&[
+   'feature-count','coordinate-bounds','point-coordinate-values',
+   'complex-geometry-values','gpx-line-geometry','dbf-attribute-values'
+  ].includes(c.id))||[];
+  check(definite.length===0,
+   'Actual converted KML has a definite critical fidelity mismatch');
+  return {independentLineVertices:true,downloadedQualityReport:true};
  });
  await test('kml_to_kmz_zip_readback_svg',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
@@ -276,14 +318,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===15&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===16&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:15,failed:report.failed,
+  status:report.status,passed:report.passed,expected:16,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();
