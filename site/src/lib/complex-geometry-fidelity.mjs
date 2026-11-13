@@ -10,7 +10,10 @@
  */
 import JSZip from 'jszip';
 
-const MAX_BYTES=8*1024*1024,MAX_FEATURES=500,MAX_VERTICES=20000;
+// A 3,000-polygon real-browser stress case stays inside the bounded
+// independent validator rather than silently falling back to unavailable.
+// These limits do not expand the 15 MiB user upload cap.
+const MAX_BYTES=18*1024*1024,MAX_FEATURES=4000,MAX_VERTICES=120000;
 const EPS=0.000005,ANGLE_ZERO=1e-14;
 const invalid=reason=>{throw Error(reason)};
 const unavailable=reason=>({status:'unavailable',detail:reason});
@@ -147,6 +150,7 @@ function kml(text,state){
 async function shapefile(bytes,state){
  const zip=await JSZip.loadAsync(bytes);
  const files=Object.keys(zip.files).filter(n=>!zip.files[n].dir);
+ if(files.length>32)invalid('Too many SHP archive entries for independent inspection');
  const shpNames=files.filter(n=>n.toLowerCase().endsWith('.shp'));
  if(shpNames.length!==1)invalid('Expected exactly one SHP layer');
  const name=shpNames[0],stem=name.slice(0,-4).toLowerCase();
@@ -154,8 +158,9 @@ async function shapefile(bytes,state){
  const prj=match('prj'),shx=match('shx');
  if(prj.length!==1||shx.length!==1)invalid('Matching SHP projection/index sidecars unavailable');
  const pFile=zip.file(prj[0]),xFile=zip.file(shx[0]),sFile=zip.file(name);
- if([pFile,xFile,sFile].some(f=>(f?._data?.uncompressedSize??Infinity)>MAX_BYTES))
-  invalid('SHP sidecar exceeds bound');
+ if([pFile,xFile,sFile].some(f=>(f?._data?.uncompressedSize??Infinity)>MAX_BYTES)||
+  [pFile,xFile,sFile].reduce((n,f)=>n+(f?._data?.uncompressedSize??Infinity),0)>MAX_BYTES)
+  invalid('SHP sidecars exceed bounded total inflated size');
  const projection=await pFile.async('string');
  if(/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(projection)||
   !/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(projection))invalid('SHP is not confirmed WGS84');
@@ -229,8 +234,12 @@ function normBBox(feature){
 function ringSame(a,b){
  const x=a.slice(0,-1),y=b.slice(0,-1);
  if(x.length!==y.length)return false;
+ let candidateStarts=0;
  for(let start=0;start<y.length;start++){
   if(!samePoint(x[0],y[start]))continue;
+  // Repeated anchor vertices can force quadratic full-ring traversals.
+  // Treat highly repetitive ambiguous rings as unverified, never as loss.
+  if(++candidateStarts>32)invalid('Too many ambiguous polygon ring starting vertices');
   for(const dir of [1,-1]){
    let ok=true;
    for(let i=1;i<x.length;i++)
@@ -273,36 +282,71 @@ function geometrySame(a,b){
 function approxBbox(a,b){
  return a.every((n,i)=>Math.abs(n-b[i])<=EPS*4);
 }
+// The original P40 search rescanned every output feature and its entire
+// vertex tree for each source feature: O(N²·vertices). For a few thousand
+// separate real polygons this dominated the independent verification.
+const BBOX_CELL=0.0001;
+const bboxCell=number=>Math.floor(number/BBOX_CELL);
+const bboxKey=(type,x,y)=>type+'|'+x+'|'+y;
 function compare(before,after){
+ const types=new Map();
+ for(const f of before)types.set(f.type,(types.get(f.type)||0)+1);
  const summary=before.length+' source and '+after.length+' output complex features; '+
-  before.map(f=>f.type).sort().join('/')+' geometry families.';
+  [...types].map(([type,n])=>type+'='+n).join(', ')+' geometry families.';
  if(before.length!==after.length)
   return {status:'review',detail:'Complex geometry feature count differs: '+
    before.length+' source / '+after.length+' output. Individual coordinates are omitted.'};
  if(before.length===1&&before[0].type!==after[0].type)
   return {status:'review',detail:'Complex geometry family changed: one input feature and one output feature of different geometry types. Original coordinates omitted.'};
- // For non-simple coordinate matching we need a unique per-feature pairing.
- // A shape changing geometry family or parts (holes) may still be definite
- // when only one possible corresponding source/output feature exists.
- const paired=[],unused=new Set(after.map((_,i)=>i));
- for(const input of before){
-  const inBox=normBBox(input);
-  const compatible=after.flatMap((out,i)=>unused.has(i)&&out.type===input.type?[i]:[]);
-  if(compatible.length===0)
-   return unavailable('Geometry family changed or re-grouped; cannot safely infer complex feature correspondence.');
-  const within=compatible.filter(i=>approxBbox(inBox,normBBox(after[i])));
-  const candidates=within.length?within:compatible;
-  if(candidates.length!==1)
-   return unavailable('Multiple overlapping/ambiguous complex GIS features cannot be uniquely paired; inspect with desktop GIS.');
-  const index=candidates[0];unused.delete(index);paired.push([input,after[index]]);
+
+ // Each bounding box is traversed exactly once. A two-coordinate spatial
+ // index identifies likely matches in nine cells, followed by FOUR bound
+ // comparisons. No equality claim rests on a hash or rounded coordinate.
+ const bounds=after.map(normBBox);
+ const buckets=new Map(),typeIndex=new Map();
+ for(let i=0;i<after.length;i++){
+  const feature=after[i],box=bounds[i];
+  const key=bboxKey(feature.type,bboxCell(box[0]),bboxCell(box[1]));
+  if(!buckets.has(key))buckets.set(key,[]);
+  buckets.get(key).push(i);
+  if(!typeIndex.has(feature.type))typeIndex.set(feature.type,[]);
+  typeIndex.get(feature.type).push(i);
  }
- const failures=paired.reduce((n,[a,b])=>n+(!geometrySame(a,b)?1:0),0);
+ const unused=new Set(after.map((_,i)=>i));
+ let failures=0;
+ for(const input of before){
+  const inBox=normBBox(input),type=input.type;
+  const minx=bboxCell(inBox[0]),miny=bboxCell(inBox[1]),matching=[];
+  for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+   const bucket=buckets.get(bboxKey(type,minx+dx,miny+dy))||[];
+   for(const i of bucket){
+    if(unused.has(i)&&approxBbox(inBox,bounds[i]))matching.push(i);
+   }
+  }
+  let index;
+  if(matching.length===1)index=matching[0];
+  else if(matching.length>1)
+   return unavailable('Multiple overlapping/ambiguous complex GIS features cannot be uniquely paired; inspect with desktop GIS.');
+  else {
+   // A true bbox change could mean vertex loss; without a unique feature
+   // correspondence the change cannot be assigned safely. Fail closed,
+   // rather than guessing a partner from many similar geometry records.
+   const compatible=(typeIndex.get(type)||[]).filter(i=>unused.has(i));
+   if(compatible.length!==1)
+    return unavailable('Complex geometry bounds changed or re-grouped and feature correspondence is not unique.');
+   index=compatible[0];
+  }
+  unused.delete(index);
+  if(!geometrySame(input,after[index]))failures++;
+ }
  return {status:failures?'review':'pass',
-  detail:(failures?'Complex geometry changed: ':'Independent complex geometry XY, ordered line vertices, polygon ring/holes and components agree: ')+
+  detail:(failures?'Complex geometry changed: ':
+   'Independent complex geometry XY, ordered line vertices, polygon ring/holes and components agree: ')+
    summary+' '+failures+' mismatched complex features. This is a bounded 2D check, not topology certification.'};
 }
+
 async function read(bytes,format){
- if(!(bytes instanceof Uint8Array)||bytes.length>MAX_BYTES)invalid('GIS data outside 8 MiB P40 bound');
+ if(!(bytes instanceof Uint8Array)||bytes.length>MAX_BYTES)invalid('GIS data outside 18 MiB P41 bound');
  const state={vertices:0};
  if(format==='shp')return shapefile(bytes,state);
  if(format==='kmz'){
