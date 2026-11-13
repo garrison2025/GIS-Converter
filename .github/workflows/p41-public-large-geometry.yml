@@ -1,0 +1,56 @@
+name: GIS Converter P41 large GIS geometry real-world public acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p41-large-geometry-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p41-public-large-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 36
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact P41 main SHA on Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned dependencies and Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Verify P41 3500 polygon 60000 vertex indexed fidelity tests
+        run: npm run smoke:large-geometry
+      - name: Verify P40 line polygon hole and multipart quality regressions
+        run: npm run smoke:complex-geometry
+      - name: Verify current Pages SHA and protected engineering preview noindex
+        run: npm run smoke:live-release
+      - name: Run real 3000-hole polygon GDAL WASM output and DBF unicode regression on public Pages
+        run: node scripts/polygon-stress.mjs
+      - name: Run 16 real output geometry previews and quality downloads on public Pages
+        run: npm run smoke:preview-live
+      - name: Verify 19 real upload-download GIS converters on public Pages
+        run: node scripts/live-all-routes.mjs
+      - name: Archive public P41 performance memory geometry and quality evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p41-public-large-geometry-evidence
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/gis-polygon-stress.json
+            site/p35-preview-live-results.json
+            site/live-matrix-report.json
+          if-no-files-found: warn
+# Client-side GIS conversion only. No user data leaves the browser in tests.

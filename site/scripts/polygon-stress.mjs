@@ -7,8 +7,10 @@ import {spawn,execFileSync} from 'node:child_process';
 import fs from 'node:fs';
 import {chromium} from 'playwright';
 import JSZip from 'jszip';
-const origin='http://127.0.0.1:8784', N=3000, report={status:'RUNNING',features:N};
-const server=spawn('python3',['-m','http.server','8784','--directory','dist'],{stdio:'ignore'});
+const origin=(process.env.GIS_BASE_URL||'http://127.0.0.1:8784').replace(/\/+$/,'');
+const local=origin.startsWith('http://127.0.0.1:');
+const N=3000,report={status:'RUNNING',mode:local?'local':'public',features:N};
+const server=local?spawn('python3',['-m','http.server','8784','--directory','dist'],{stdio:'ignore'}):null;
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 function check(v,m){if(!v)throw Error(m)}
 const near=(a,b,epsilon=2e-7)=>Math.abs(a-b)<epsilon;
@@ -75,9 +77,17 @@ try{
  const findCheck=id=>quality.checks.find(c=>c.id===id);
  check(quality.input.features===N && quality.output.features===N,'Quality report polygon feature counts differ');
  check(findCheck('feature-count')?.status==='pass','Quality report polygon feature count did not pass');
+ // P41 - independently compare ALL 3,000 actual shapefile polygon boundaries
+ // and holes, not just the four sampled vertices previously checked.
+ const independent=findCheck('complex-geometry-values');
+ check(independent?.status==='pass',
+  'P41 did not independently verify all 3000 real GDAL SHP polygons and holes: '+(independent?.detail||'missing'));
+ check(independent.detail.includes('Polygon=3000'),
+  'P41 real polygon quality report did not account for all 3000 features');
  check(findCheck('shp-field-limits')?.status==='review','Long Shapefile property names did not trigger review');
  check(findCheck('attribute-fidelity')?.status==='unavailable','Quality report falsely certified attributes');
  report.quality={status:quality.status,featuresIn:quality.input.features,featuresOut:quality.output.features,
+   complexGeometry:independent.status,inspectedPolygonHoles:N,
    fieldLimit:findCheck('shp-field-limits')?.status,attributes:findCheck('attribute-fidelity')?.status};
  const dp=page.waitForEvent('download');
  await page.locator('#download').click();
@@ -149,5 +159,5 @@ try{
   encoding:'UTF-8',sampledFields:sampleCoords.length};
  report.workers=workers;report.pageErrors=pageErrors;report.status='PASSED';
 }catch(e){report.status='FAILED';report.error=String(e?.stack||e)}
-finally{if(tick)clearInterval(tick);fs.writeFileSync('gis-polygon-stress.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser?.close();server.kill()}
+finally{if(tick)clearInterval(tick);fs.writeFileSync('gis-polygon-stress.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));await browser?.close();server?.kill()}
 if(report.status!=='PASSED')process.exitCode=1;
