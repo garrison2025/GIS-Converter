@@ -31,6 +31,8 @@ jobs:
           npx playwright install --with-deps chromium firefox webkit
       - name: Verify bounded 2D geometry fidelity and withheld corrupt output
         run: npm run smoke:complex-geometry
+      - name: P41 verify large geometry deterministic scale and output matching
+        run: npm run smoke:large-geometry
       - name: Validate live SHA and noindex engineering-preview controls
         run: npm run smoke:live-release
       - name: Run 16 actual converted GIS output preview and report cases
