@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import {applyGpxElevationToKml} from './gpx-elevation.mjs';
 import {enhanceGpxTimedKml} from './gpx-timed-track.mjs';
+import {repairLegacyShpGeojson} from './legacy-shapefile-text.mjs';
 export const routes=[
 ['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
 ['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
@@ -24,35 +25,10 @@ async function collect(gdal,path){
  }
  return files;
 }
-/**
- * A few desktop GIS exporters include a .cpg legacy encoding hint. GDAL/WASM
- * may not infer this from /vsizip in the same way as native GDAL. For small
- * archives inspect only that bounded hint and pass it explicitly to the
- * Shapefile driver. Do not guess a codepage when the hint is missing.
- */
-async function nativeShapeEncodingOptions(input){
- if(input.size>2*1024*1024)return [];
- try{
-  const archive=await JSZip.loadAsync(await input.arrayBuffer());
-  const entries=Object.keys(archive.files).filter(name=>!archive.files[name].dir);
-  const shp=entries.filter(name=>name.toLowerCase().endsWith('.shp'));
-  if(shp.length!==1)return [];
-  const key=shp[0].slice(0,-4).toLowerCase()+'.cpg';
-  const cpgName=entries.find(name=>name.toLowerCase()===key);
-  if(!cpgName)return [];
-  const cpg=archive.file(cpgName);
-  if((cpg?._data?.uncompressedSize??Infinity)>64)return [];
-  const encoding=(await cpg.async('string')).trim().toUpperCase();
-  if(['CP1252','WINDOWS-1252','1252'].includes(encoding))
-   return ['ENCODING=CP1252'];
- }catch{}
- return [];
-}
 export async function convertGdal(gdal,input,src,dst){
  if(!types[dst]||!types[src])throw Error('Unsupported GIS format');
  if(input.size>15*1024*1024)throw Error('Input exceeds the 15 MiB test limit');
- const openOptions=src==='csv'?['X_POSSIBLE_NAMES=longitude,lon,x','Y_POSSIBLE_NAMES=latitude,lat,y']:
-  src==='shp'?await nativeShapeEncodingOptions(input):[];
+ const openOptions=src==='csv'?['X_POSSIBLE_NAMES=longitude,lon,x','Y_POSSIBLE_NAMES=latitude,lat,y']:[];
  const opened=await gdal.open(input,openOptions,['shp','kmz'].includes(src)?['vsizip']:[]);
  const ds=opened.datasets?.[0];if(!ds)throw Error('GDAL could not open '+src+': '+JSON.stringify(opened.errors||[]));
  let files;
@@ -86,6 +62,20 @@ export async function convertGdal(gdal,input,src,dst){
    files.set(kmlKey,timed.bytes);
   }
  }
+ // Some GDAL/WASM builds misdecode Windows-1252 DBF text even with a
+ // native .cpg. Re-read original DBF bytes on this SHP→GeoJSON route and
+ // correct only strings which independently match the observed mojibake.
+ // Fail closed if a legacy source cannot be reconciled without guessing.
+ let legacyTextWarning='';
+ if(src==='shp'&&dst==='geojson'){
+  const key=[...files.keys()].find(name=>name.toLowerCase().endsWith('.geojson'));
+  if(key){
+   const checked=await repairLegacyShpGeojson(input,files.get(key));
+   if(checked.bytes)files.set(key,checked.bytes);
+   if(checked.status==='cp1252-corrected')legacyTextWarning=
+    'Legacy CP1252 DBF text was independently decoded and corrected locally. Review output names and field types in your GIS software.';
+  }
+ }
  if(dst==='shp'){
   const exts=[...files.keys()].map(n=>n.toLowerCase().split('.').pop());
   for(const ext of ['shp','shx','dbf'])if(!exts.includes(ext))throw Error('Shapefile missing .'+ext);
@@ -101,7 +91,7 @@ export async function convertGdal(gdal,input,src,dst){
  const ext=dst==='geojson'?'geojson':dst;
  const key=[...files.keys()].find(n=>n.toLowerCase().endsWith('.'+ext));
  if(!key)throw Error('Expected '+ext+' missing: '+[...files.keys()].join(','));
- return {name:'converted.'+ext,bytes:files.get(key),mime:dst==='geojson'?'application/geo+json':'text/plain',files:[...files.keys()],warning:dst==='gpx'?'GPX cannot represent polygon geometries; information may be lost.':''};
+ return {name:'converted.'+ext,bytes:files.get(key),mime:dst==='geojson'?'application/geo+json':'text/plain',files:[...files.keys()],warning:[dst==='gpx'?'GPX cannot represent polygon geometries; information may be lost.':'',legacyTextWarning].filter(Boolean).join(' ')};
 }
 const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Sample Point</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
 export async function makeFixture(format,shpZip){
