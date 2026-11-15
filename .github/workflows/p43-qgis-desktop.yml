@@ -58,7 +58,7 @@ jobs:
               fi
               sleep 0.3
             done
-            curl -fsS http://127.0.0.1:8784/release.json > /dev/null
+            curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null
           fi
       - name: Run P43 mobile-profile 3000-hole real GDAL and cancellation recovery
         run: npm run smoke:mobile-resilience
