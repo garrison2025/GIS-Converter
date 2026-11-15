@@ -150,10 +150,21 @@ export function diagnoseGISFailure(error,{code,source,target}={}){
  else if(test(/out of memory|memory allocation|cannot allocate|memory exhausted|abort\(|runtimeerror:.*memory/i,message))id='memory';
  else if(test(/GDAL could not open|failed to open|not recognized as a supported file format/i,message))id='gdal-open';
  const selected=guidance[id];
+ // Keep the exact fixed numeric UI limit visible, without interpolating
+ // untrusted filenames, source coordinates or the original exception text.
+ let summary=selected.summary;
+ if(id==='size'){
+  if(/12 MiB/.test(message))summary='Memory-saving mini-batch input exceeds the 12 MiB combined input limit.';
+  else if(/24 MiB/.test(message))summary='Memory-saving mini-batch output exceeds the 24 MiB combined output limit.';
+  else if(/30 MiB/.test(message))summary='Mini-batch input exceeds the 30 MiB combined input limit.';
+  else if(/96 MiB/.test(message))summary='Mini-batch output exceeds the 96 MiB combined output limit.';
+  else if(/15 MiB/.test(message))summary='A GIS input file is empty or exceeds the 15 MiB per-file size limit.';
+  else if(/3 files|no more than 3 files/i.test(message))summary='Select no more than 3 files for one mini-batch.';
+ }
  // The format context is a short, internal route code, never supplied file
  // content or filename; omit it from UI when unknown.
  const route=/^(shp|kml|kmz|geojson|gpx|csv)$/.test(source)&&
   /^(shp|kml|kmz|geojson|gpx|csv)$/.test(target)?source+'-to-'+target:null;
- return {...selected,steps:[...selected.steps],route};
+ return {...selected,summary,steps:[...selected.steps],route};
 }
 export const GIS_RECOVERY_CATEGORIES=Object.freeze(Object.keys(guidance));
