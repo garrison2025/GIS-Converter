@@ -55,8 +55,10 @@ jobs:
             done
             curl -fsS http://127.0.0.1:8784/release.json > /dev/null
           fi
+      - name: Run P43 mobile-profile 3000-hole real GDAL and cancellation recovery
+        run: npm run smoke:mobile-resilience
       - name: Download actual browser polygon, CP1252 and projected GIS exports
-        run: node scripts/p43-browser-qgis-fixtures.mjs
+        run: npm run smoke:qgis-browser-fixtures
       - name: Open five browser/native files in installed QGIS and render real Qt map canvas
         run: |
           /usr/bin/python3 scripts/p43-qgis-qt-gui.py p43-qgis-fixtures
