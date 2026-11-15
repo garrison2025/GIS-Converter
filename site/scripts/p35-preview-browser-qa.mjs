@@ -98,8 +98,15 @@ try{
    'Memory saving must retain independent point fidelity checks');
   // Disabling saver and retrying must restore optional SVG preview.
   await page.locator('#memory-save').uncheck();
-  const again=await submit(page,'kml-to-geojson',input);
-  check(again.bytes.length>0,'Retry after disabling saver produced no output');
+  await page.locator('#file').setInputFiles(input);
+  await page.locator('#submit').click();
+  try{await page.locator('#result').waitFor({state:'visible',timeout:110000})}
+  catch{throw Error('Retry after disabling saver failed: '+await page.locator('#error').innerText())}
+  const [retryDownload]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),page.locator('#download').click()
+  ]);
+  check(JSON.parse(fs.readFileSync(await retryDownload.path(),'utf8')).features.length===1,
+   'Retry after disabling saver produced no GIS output');
   await resultReady(page);
   return {deviceMemoryHintGiB:1,downloadAndQualityIntact:true,
    optionalPreviewSkipped:true,normalRetryRecovered:true};
