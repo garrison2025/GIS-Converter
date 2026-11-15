@@ -220,14 +220,23 @@ try{
   }]};
   const json=make('p42-source-cp1252.geojson',JSON.stringify(source));
   const shp=path.join(work,'p42-native-cp1252.shp');
+  // P33's CLI helper uses SHAPE_ENCODING=UTF-8 by default to validate
+  // modern exports. For this fixture override it at BOTH native write
+  // and read. Otherwise OGR can emit raw UTF-8 but label it CP1252,
+  // yielding an invalid, misleading synthetic interoperability test.
   cli('ogr2ogr',['-f','ESRI Shapefile',shp,json,
-   '-lco','ENCODING=CP1252']);
+   '-lco','ENCODING=CP1252'],{env:{SHAPE_ENCODING:'CP1252'}});
   const base=shp.slice(0,-4);
   assert(fs.existsSync(base+'.cpg'),'Native OGR did not produce CP1252 .cpg sidecar');
+  const nativeDbf=fs.readFileSync(base+'.dbf');
+  assert(nativeDbf.includes(Buffer.from([0xe9]))&&
+   !nativeDbf.includes(Buffer.from([0xc3,0xa9])),
+   'CP1252 fixture DBF does not contain actual single-byte CP1252 é');
   fs.copyFileSync(base+'.prj',base+'.qpj'); // harmless QGIS companion extension
-  const native=nativeRead(shp);
+  const native=JSON.parse(cli('ogr2ogr',['-f','GeoJSON','/vsistdout/',shp],
+   {env:{SHAPE_ENCODING:'CP1252'}}));
   assert(native.features[0]?.properties?.Label==='Café Málaga',
-   'Native producer failed to encode/decode CP1252 text');
+   'Native producer failed to encode/decode actual CP1252 text');
   const archive=await zipShapefile(shp);
   const converted=await convert(page,'shp-to-geojson',
    {name:'p42-native-european.zip',mimeType:'application/zip',buffer:archive},
