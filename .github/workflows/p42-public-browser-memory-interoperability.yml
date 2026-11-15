@@ -33,6 +33,8 @@ jobs:
           sudo apt-get install -y -qq gdal-bin
       - name: Validate P42 resource-budget unit and ZIP memory guards
         run: npm run smoke:memory-policy
+      - name: Validate strict CP1252 DBF byte decoding and geometry-safe repair
+        run: npm run smoke:legacy-dbf
       - name: Verify exact release SHA and engineering-preview noindex
         run: npm run smoke:live-release
       - name: Run P42 18 real-browser GIS preview, low-memory and retry cases
