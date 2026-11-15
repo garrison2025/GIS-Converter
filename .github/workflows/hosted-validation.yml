@@ -37,6 +37,8 @@ jobs:
         run: npm run smoke:complex-geometry
       - name: P41 verify 3500 polygon holes and 60000 line vertices with bounded spatial matching
         run: npm run smoke:large-geometry
+      - name: P42 verify constrained-device resources, safe ZIP packaging and Worker retry policy
+        run: npm run smoke:memory-policy
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
