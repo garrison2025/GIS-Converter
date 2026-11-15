@@ -39,7 +39,7 @@ jobs:
         run: npm run smoke:live-release
       - name: Run real 3000-hole polygon GDAL WASM output and DBF unicode regression on public Pages
         run: node scripts/polygon-stress.mjs
-      - name: Run 16 real output geometry previews and quality downloads on public Pages
+      - name: Run 19 real output geometry previews and quality downloads on public Pages
         run: npm run smoke:preview-live
       - name: Verify 19 real upload-download GIS converters on public Pages
         run: node scripts/live-all-routes.mjs
