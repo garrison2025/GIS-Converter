@@ -5,7 +5,7 @@
  * Never claim a specific device can process a given GIS file based on this.
  */
 import fs from 'node:fs';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawn} from 'node:child_process';
 import {chromium,webkit} from 'playwright';
 import JSZip from 'jszip';
 
@@ -59,8 +59,24 @@ async function run(name,fn){
  catch(e){entry.error=String(e?.stack||e).slice(0,1700);
   console.error('P43_MOBILE '+name+' FAILED '+entry.error)}
 }
-let browser,kit;
+let browser,kit,localServer;
 try{
+ // Hosted validation invokes this script with built dist but no persistent
+ // web server. Public live acceptance and the QGIS workflow already have
+ // a reachable origin. Start local static service only when needed.
+ let available=false;
+ for(let attempt=0;attempt<3;attempt++){
+  try{available=(await fetch(root+'/')).ok;if(available)break}catch{}
+  await sleep(250);
+ }
+ if(!available&&local){
+  localServer=spawn('python3',['-m','http.server','8784','--directory','dist'],{stdio:'ignore'});
+  for(let attempt=0;attempt<65;attempt++){
+   try{if((await fetch(root+'/')).ok){available=true;break}}catch{}
+   await sleep(200);
+  }
+ }
+ check(available,'P43 browser test origin unavailable');
  browser=await chromium.launch({headless:true,args:['--no-sandbox','--enable-precise-memory-info']});
  const ctx=await browser.newContext({viewport:{width:390,height:844},
   isMobile:true,hasTouch:true,deviceScaleFactor:2,acceptDownloads:true});
@@ -173,7 +189,7 @@ try{
  report.status='PASSED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,1800)}
 finally{
- await kit?.close();await browser?.close();
+ await kit?.close();await browser?.close();localServer?.kill();
  fs.writeFileSync(file,JSON.stringify(report,null,2));
  console.log('P43_MOBILE_SUMMARY '+JSON.stringify({status:report.status,
   passed:report.cases.filter(c=>c.status==='PASSED').length,expected:3,
