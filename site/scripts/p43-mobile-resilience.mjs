@@ -145,14 +145,30 @@ try{
   check(stopped.starts===stopped.stops&&stopped.canSubmit,
    'Cancelled large conversion leaked Worker or disabled submit');
   check(await page.locator('#result').isHidden(),'Cancelled large conversion exposed partial result');
-  await page.locator('#file').setInputFiles(pointFixture());
+  // Keep the exact same GeoJSON→SHP page; a KML fixture would be
+  // intentionally rejected by the filename preflight and would NOT test
+  // cancellation recovery of this conversion route.
+  const retryGeojson={type:'FeatureCollection',features:[{
+   type:'Feature',properties:{Label:'Retry'},
+   geometry:{type:'Point',coordinates:[116.4,39.9]}
+  }]};
+  await page.locator('#file').setInputFiles({
+   name:'p43-retry.geojson',mimeType:'application/geo+json',
+   buffer:Buffer.from(JSON.stringify(retryGeojson))
+  });
   await page.locator('#submit').click();
   try{await page.locator('#result').waitFor({state:'visible',timeout:110000})}
   catch{throw Error('Recovery after cancel failed: '+await page.locator('#error').textContent())}
-  const json=JSON.parse((await download(page,'#download')).toString('utf8'));
-  check(json.features.length===1,'Retry feature count wrong');
-  check(Math.abs(json.features[0].geometry.coordinates[0]-116.4)<.00001,
-   'Retry returned stale/corrupt geometry');
+  const retryZip=await JSZip.loadAsync(await download(page,'#download'));
+  const shpName=Object.keys(retryZip.files).find(n=>n.toLowerCase().endsWith('.shp'));
+  check(Boolean(shpName),'Successful retry did not return a Shapefile');
+  const shape=await retryZip.file(shpName).async('uint8array');
+  const view=new DataView(shape.buffer,shape.byteOffset,shape.byteLength);
+  check(shape.byteLength>=128&&view.getInt32(108,true)===1,
+   'Retry does not contain a valid 2D Shapefile Point');
+  check(Math.abs(view.getFloat64(112,true)-116.4)<.00001&&
+   Math.abs(view.getFloat64(120,true)-39.9)<.00001,
+   'Retry returned stale or corrupt point geometry');
   const memoryFlag=await page.locator('#memory-save').isChecked();
   check(memoryFlag,'Retry unexpectedly disabled low-memory mode');
   const workers=await page.evaluate(()=>({starts:window.__workerStarts,stops:window.__workerStops}));
