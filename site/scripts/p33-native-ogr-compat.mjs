@@ -19,7 +19,7 @@ const local=/^http:\/\/127\.0\.0\.1:\d+$/.test(origin);
 const filename=local?'p33-native-local-results.json':'p33-native-live-results.json';
 const report={kind:'p33-native-ogr-interoperability',origin,
  mode:local?'local-wrangler':'public-cloudflare',
- startedAt:new Date().toISOString(),status:'FAILED',expected:6,passed:0,
+ startedAt:new Date().toISOString(),status:'FAILED',expected:7,passed:0,
  cases:[],failed:[],browserErrors:[],nativeOgrVersion:null};
 const work=fs.mkdtempSync(path.join(os.tmpdir(),'gis-p33-'));
 const assert=(condition,message)=>{if(!condition)throw Error(message)};
@@ -50,7 +50,7 @@ function nativeRead(source,{layer=null,transform=null}={}){
 }
 async function zipShapefile(shp){
  const base=shp.slice(0,-4),archive=new JSZip();
- for(const ext of ['shp','shx','dbf','prj','cpg']){
+ for(const ext of ['shp','shx','dbf','prj','cpg','qpj']){
   const file=base+'.'+ext;
   if(ext!=='cpg')assert(fs.existsSync(file),'Missing native SHP companion '+ext);
   if(fs.existsSync(file))archive.file(path.basename(file),fs.readFileSync(file));
@@ -210,6 +210,41 @@ try{
   '<Placemark><name>Sample One</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark>'+
   '<Placemark><name>Sample Two</name><Point><coordinates>114.1,22.5,0</coordinates></Point></Placemark>'+
   '</Document></kml>';
+ await runCase('native_cp1252_qgis_style_shapefile_cpg_qpj_accents_survive_browser_readback',async()=>{
+  // Independent native GDAL writes a Windows-1252 Shapefile (often exported
+  // by European desktop GIS tools). The browser must decode its .cpg, while
+  // the quality report must NOT claim strict UTF-8 DBF verification.
+  const source={type:'FeatureCollection',features:[{
+   type:'Feature',properties:{Label:'Café Málaga',Code:31},
+   geometry:{type:'Point',coordinates:[-4.42,36.72]}
+  }]};
+  const json=make('p42-source-cp1252.geojson',JSON.stringify(source));
+  const shp=path.join(work,'p42-native-cp1252.shp');
+  cli('ogr2ogr',['-f','ESRI Shapefile',shp,json,
+   '-lco','ENCODING=CP1252']);
+  const base=shp.slice(0,-4);
+  assert(fs.existsSync(base+'.cpg'),'Native OGR did not produce CP1252 .cpg sidecar');
+  fs.copyFileSync(base+'.prj',base+'.qpj'); // harmless QGIS companion extension
+  const native=nativeRead(shp);
+  assert(native.features[0]?.properties?.Label==='Café Málaga',
+   'Native producer failed to encode/decode CP1252 text');
+  const archive=await zipShapefile(shp);
+  const converted=await convert(page,'shp-to-geojson',
+   {name:'p42-native-european.zip',mimeType:'application/zip',buffer:archive},
+   '.geojson');
+  const exported=JSON.parse(converted.bytes.toString('utf8'));
+  assert(exported.features.length===1,'CP1252 source feature count changed');
+  const feature=exported.features[0],xy=feature.geometry?.coordinates;
+  assert(approx(xy?.[0],-4.42,.0001)&&approx(xy?.[1],36.72,.0001),
+   'Browser GDAL changed WGS84 coordinates for CP1252 native input');
+  assert(feature.properties?.Label==='Café Málaga'&&Number(feature.properties?.Code)===31,
+   'Website GIS conversion corrupted non-UTF8 DBF attribute');
+  assert(converted.qualityStatus!=='checked',
+   'Strict UTF-8-only DBF fidelity checker must not certify CP1252 source values');
+  return {nativeProducer:'ogr2ogr',exportEncoding:'CP1252',qgisQpjCompanion:true,
+   unicodeOutput:'UTF-8 GeoJSON',roundTripAttribute:true,
+   independentStrictUTF8Quality:'NOT_CERTIFIED',sha256:converted.sha256};
+ });
  await runCase('native_ogr_reads_browser_kml_to_kmz_extracted_document',async()=>{
   const converted=await convert(page,'kml-to-kmz',
    {name:'p33-two-points.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:Buffer.from(kmlText)},'.kmz');
