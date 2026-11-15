@@ -44,7 +44,12 @@ jobs:
             GIS_BASE_URL=https://gis-converter.pages.dev node scripts/p35-await-live-release.mjs
             GIS_BASE_URL=https://gis-converter.pages.dev npm run smoke:live-release
           else
-            npm run build:pages
+            # Local static HTTP requires the uncompressed GDAL WASM asset.
+            # build:pages strips it for Cloudflare's gzip Pages Function;
+            # local GUI fixture runs must therefore build *before* that strip.
+            npm run stage:gdal
+            npm run pack:gdal
+            npm run build
             (python3 -m http.server 8784 --directory dist > /tmp/p43-gis-local.log 2>&1 &)
             echo 'GIS_BASE_URL=http://127.0.0.1:8784' >> "$GITHUB_ENV"
             for attempt in $(seq 1 50); do
