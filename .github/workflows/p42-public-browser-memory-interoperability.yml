@@ -37,7 +37,7 @@ jobs:
         run: npm run smoke:legacy-dbf
       - name: Verify exact release SHA and engineering-preview noindex
         run: npm run smoke:live-release
-      - name: Run P42 18 real-browser GIS preview, low-memory and retry cases
+      - name: Run P42 19 real-browser GIS preview, low-memory and retry cases
         run: npm run smoke:preview-live
       - name: Native GDAL/OGR independently validate seven interoperability cases including CP1252
         run: npm run smoke:native-live
