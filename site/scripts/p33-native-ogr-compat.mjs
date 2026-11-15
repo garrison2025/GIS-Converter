@@ -52,7 +52,7 @@ async function zipShapefile(shp){
  const base=shp.slice(0,-4),archive=new JSZip();
  for(const ext of ['shp','shx','dbf','prj','cpg','qpj']){
   const file=base+'.'+ext;
-  if(ext!=='cpg')assert(fs.existsSync(file),'Missing native SHP companion '+ext);
+  if(!['cpg','qpj'].includes(ext))assert(fs.existsSync(file),'Missing native SHP companion '+ext);
   if(fs.existsSync(file))archive.file(path.basename(file),fs.readFileSync(file));
  }
  return Buffer.from(await archive.generateAsync({type:'uint8array',compression:'DEFLATE'}));
@@ -238,7 +238,10 @@ try{
   assert(approx(xy?.[0],-4.42,.0001)&&approx(xy?.[1],36.72,.0001),
    'Browser GDAL changed WGS84 coordinates for CP1252 native input');
   assert(feature.properties?.Label==='Café Málaga'&&Number(feature.properties?.Code)===31,
-   'Website GIS conversion corrupted non-UTF8 DBF attribute');
+   'Website GIS conversion corrupted non-UTF8 DBF attribute (synthetic): '+JSON.stringify({
+    properties:feature.properties,
+    cpg:fs.readFileSync(base+'.cpg','utf8').trim()
+   }));
   assert(converted.qualityStatus!=='checked',
    'Strict UTF-8-only DBF fidelity checker must not certify CP1252 source values');
   return {nativeProducer:'ogr2ogr',exportEncoding:'CP1252',qgisQpjCompanion:true,
