@@ -235,7 +235,11 @@ const showGuidance=(reason,code)=>{
  // Only curated constant text and no raw GDAL/DBF error, paths or
  // coordinates reach the document. Never insert HTML from conversion data.
  error.hidden=false;
- error.textContent='Conversion failed: '+advice.summary;
+ // Keep only the known mini-batch ordinal (1-3). User filenames, paths
+ // and GDAL strings must never be copied into the visible exception.
+ const errorMessage=reason instanceof Error?reason.message:String(reason||'');
+ const batchMatch=/^File ([1-3]) \(/.exec(errorMessage);
+ error.textContent='Conversion failed: '+(batchMatch?'File '+batchMatch[1]+': ':'')+advice.summary;
  recoveryPanel.dataset.guidance=advice.id;
  document.querySelector('#recovery-title').textContent=advice.title;
  document.querySelector('#recovery-detail').textContent=
