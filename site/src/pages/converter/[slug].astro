@@ -60,6 +60,12 @@ const label=formats[from].name+' to '+formats[to].name;
  #cancel:hover{background:#fff7eb}
  .status{border-top:1px solid #edf1f2;padding-top:14px;margin-top:20px!important;color:#4e6b78;font-size:14px}
  .error{white-space:pre-wrap;background:#fff1f1;color:#982c35!important;padding:10px 12px;border-radius:8px}
+ .recovery{border:1px solid #e5ceaa;background:#fffaf2;color:#354c58;border-radius:11px;margin:12px 0;padding:14px 16px}
+ .recovery h3{margin:0 0 6px;font-size:16px}
+ .recovery p{margin:0 0 8px!important;font-size:13px!important;color:#566d75}
+ .recovery ol{margin:0;padding-left:22px;font-size:13px}
+ .recovery li{margin:6px 0}
+ .recovery .recovery-code{font-size:11px;color:#677d87}
  .result{background:#e9f8f2;padding:16px;border-radius:12px;margin-top:15px}
  .result p{margin:0 0 12px;color:#245a4f}
  .quality{background:#fff;border:1px solid #d5e6db;border-radius:11px;margin:16px 0;padding:15px;color:#284456}
@@ -137,6 +143,12 @@ const label=formats[from].name+' to '+formats[to].name;
   <div class="actions"><button id="submit" type="submit">Convert to {info.target.name} <span aria-hidden="true">→</span></button><button id="cancel" type="button" hidden>Cancel conversion</button></div>
   <p id="status" class="status" role="status" aria-live="polite">Ready to convert.</p>
   <p id="error" class="error" role="alert" hidden></p>
+  <section id="recovery-panel" class="recovery" aria-labelledby="recovery-title" hidden>
+   <h3 id="recovery-title"></h3>
+   <p id="recovery-detail"></p>
+   <ol id="recovery-steps"></ol>
+   <p id="recovery-code" class="recovery-code"></p>
+  </section>
   <section id="result" class="result" aria-label="Conversion result" tabindex="-1" hidden>
    <strong>Conversion complete</strong>
    <p id="details"></p><p id="warning"></p>
@@ -198,6 +210,7 @@ const label=formats[from].name+' to '+formats[to].name;
 import {routes} from '../../lib/gdal-matrix.mjs';
 import {runIsolatedConversion} from '../../lib/isolated-task.mjs';
 import {suggestedMemorySavingMode,checkMemorySavingSelection} from '../../lib/resource-budget.mjs';
+import {diagnoseGISFailure} from '../../lib/gis-error-guidance.mjs';
 const form=document.querySelector('#converter');
 const status=document.querySelector('#status'),btn=document.querySelector('#submit');
 const file=document.querySelector('#file'),error=document.querySelector('#error'),result=document.querySelector('#result');
@@ -205,14 +218,42 @@ const cancelButton=document.querySelector('#cancel');
 const selected=document.querySelector('#file-info');
 const previewPanel=document.querySelector('#preview-panel');
 const memoryOption=document.querySelector('#memory-save');
+const recoveryPanel=document.querySelector('#recovery-panel');
 memoryOption.checked=suggestedMemorySavingMode(navigator.deviceMemory);
 const placeholder=selected.textContent;
 let linkUrl=null,reportUrl=null,activeTask=null;
 const MAX_FILES=3;
 const MAX_FILE_BYTES=15*1024*1024;
 const MAX_BATCH_BYTES=30*1024*1024;
+const hideGuidance=()=>{
+ recoveryPanel.hidden=true;
+ recoveryPanel.removeAttribute('data-guidance');
+};
+const showGuidance=(reason,code)=>{
+ const tuple=routes.find(r=>r[0]===form.dataset.slug);
+ const advice=diagnoseGISFailure(reason,{code,source:tuple?.[1],target:tuple?.[2]});
+ // Only curated constant text and no raw GDAL/DBF error, paths or
+ // coordinates reach the document. Never insert HTML from conversion data.
+ error.hidden=false;
+ error.textContent='Conversion failed: '+advice.summary;
+ recoveryPanel.dataset.guidance=advice.id;
+ document.querySelector('#recovery-title').textContent=advice.title;
+ document.querySelector('#recovery-detail').textContent=
+  'These are suggested manual fixes, not an automatic GIS data repair.';
+ const list=document.querySelector('#recovery-steps');
+ list.replaceChildren();
+ for(const instruction of advice.steps){
+  const li=document.createElement('li');li.textContent=instruction;list.appendChild(li);
+ }
+ document.querySelector('#recovery-code').textContent=
+  'Guidance code: '+advice.id+(advice.route?' · Route: '+advice.route:'');
+ recoveryPanel.hidden=false;
+ return advice;
+};
 const showSelectionError=message=>{
- error.hidden=false;error.textContent=message;status.textContent='Review the selected files before converting.';
+ const advice=showGuidance(message);
+ status.textContent='Review the selected files before converting.';
+ return advice;
 };
 function selectionError(files){
  if(files.length>MAX_FILES)return 'Choose no more than 3 files per mini-batch.';
@@ -225,7 +266,7 @@ function selectionError(files){
 memoryOption.addEventListener('change',()=>{
  // Never clear the selected local file; review limits before conversion.
  const inputs=Array.from(file.files||[]);
- error.hidden=true;error.textContent='';
+ error.hidden=true;error.textContent='';hideGuidance();
  status.textContent='Ready to convert.';
  const issue=selectionError(inputs);
  if(issue)showSelectionError(issue);
@@ -275,6 +316,7 @@ dropZone.addEventListener('drop',event=>{
  }
 });
 const resetOutput=()=>{
+ hideGuidance();
  if(linkUrl){URL.revokeObjectURL(linkUrl);linkUrl=null;}
  if(reportUrl){URL.revokeObjectURL(reportUrl);reportUrl=null;}
  document.querySelector('#quality').hidden=true;
@@ -410,12 +452,12 @@ form?.addEventListener('submit',async(event)=>{
  }catch(e){
   if(operation&&activeTask!==operation)return;
   if(e?.code==='CANCELLED'){
+   hideGuidance();
    status.textContent='Conversion cancelled. You may retry.';
   }else{
-   error.hidden=false;
-   error.textContent='Conversion failed: '+(e instanceof Error?e.message:String(e));
-   status.textContent=e?.code==='TIMEOUT'?'Timed out. You may retry.':
-    'Failed. You may retry.';
+   const advice=showGuidance(e,e?.code);
+   status.textContent=advice.id==='timeout'?'Timed out. You may retry.':
+    'Failed. You may retry using the guidance below.';
   }
  }finally{
   if(!operation||activeTask===operation){
