@@ -50,6 +50,7 @@
     "smoke:complex-geometry": "node scripts/p40-complex-geometry.mjs",
     "smoke:large-geometry": "node scripts/p41-large-geometry-scale.mjs",
     "smoke:memory-policy": "node scripts/p42-memory-policy.mjs",
+    "smoke:legacy-dbf": "node scripts/p42-cp1252-dbf.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
