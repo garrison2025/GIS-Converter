@@ -35,7 +35,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends qgis python3-qgis gdal-bin xvfb
           npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium firefox webkit
           /usr/bin/python3 -c "from qgis.core import QgsApplication; from qgis.gui import QgsMapCanvas; print('PyQGIS Qt desktop canvas available')"
       - name: Prepare exact local dev build or independently attest main Cloudflare release
         run: |
