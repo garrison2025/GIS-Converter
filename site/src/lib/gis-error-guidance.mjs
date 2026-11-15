@@ -93,7 +93,7 @@ const guidance={
    'Export a genuine file in that format; changing its extension does not convert it.',
    'For Shapefile use a ZIP containing same-name sidecars; then reselect it.']),
  'size':make('size','Input or output exceeds safe processing limits',
-  'The selected GIS file exceeds the current engineering size or batch limit.',
+  'The GIS file exceeds the 15 MiB per-file or applicable mini-batch size limit.',
   ['Use one file at a time, particularly on phones or low-memory devices.',
    'Split the source using a GIS editor into smaller parts while recording original feature totals.',
    'Avoid losing geometries or columns while shrinking the file; independently verify all parts.']),
