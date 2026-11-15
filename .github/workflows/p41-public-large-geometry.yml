@@ -31,6 +31,8 @@ jobs:
           npx playwright install --with-deps chromium firefox webkit
       - name: Verify P41 3500 polygon 60000 vertex indexed fidelity tests
         run: npm run smoke:large-geometry
+      - name: P42 verify memory-saving resource limits and no-loss worker options
+        run: npm run smoke:memory-policy
       - name: Verify P40 line polygon hole and multipart quality regressions
         run: npm run smoke:complex-geometry
       - name: Verify current Pages SHA and protected engineering preview noindex
