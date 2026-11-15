@@ -39,6 +39,8 @@ jobs:
         run: npm run smoke:large-geometry
       - name: P42 verify constrained-device resources, safe ZIP packaging and Worker retry policy
         run: npm run smoke:memory-policy
+      - name: P42 byte-verify CP1252 Shapefile to GeoJSON field repair without guessing
+        run: npm run smoke:legacy-dbf
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
