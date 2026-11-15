@@ -1,0 +1,93 @@
+name: GIS Converter P43 real QGIS desktop Qt GUI and browser interoperability
+on:
+  push:
+    branches:
+      - dev/p43-**
+      - main
+    paths:
+      - site/scripts/p43-browser-qgis-fixtures.mjs
+      - site/scripts/p43-qgis-qt-gui.py
+      - site/.p43-qgis-public-acceptance
+      - .github/workflows/p43-qgis-desktop.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p43-qgis-qt-gui:
+    name: P43 installed QGIS desktop Qt GUI reads actual browser GIS exports
+    runs-on: ubuntu-24.04
+    timeout-minutes: 43
+    defaults:
+      run:
+        working-directory: site
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUNBUFFERED: "1"
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Install pinned frontend, real Chromium, and Ubuntu packaged QGIS desktop Qt UI
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qgis python3-qgis gdal-bin xvfb
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+          /usr/bin/python3 -c "from qgis.core import QgsApplication; from qgis.gui import QgsMapCanvas; print('PyQGIS Qt desktop canvas available')"
+      - name: Prepare exact local dev build or independently attest main Cloudflare release
+        run: |
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            echo 'GIS_BASE_URL=https://gis-converter.pages.dev' >> "$GITHUB_ENV"
+            GIS_BASE_URL=https://gis-converter.pages.dev node scripts/p35-await-live-release.mjs
+            GIS_BASE_URL=https://gis-converter.pages.dev npm run smoke:live-release
+          else
+            # Local static HTTP requires the uncompressed GDAL WASM asset.
+            # build:pages strips it for Cloudflare's gzip Pages Function;
+            # local GUI fixture runs must therefore build *before* that strip.
+            npm run stage:gdal
+            npm run pack:gdal
+            npm run build
+            (python3 -m http.server 8784 --directory dist > /tmp/p43-gis-local.log 2>&1 &)
+            echo 'GIS_BASE_URL=http://127.0.0.1:8784' >> "$GITHUB_ENV"
+            for attempt in $(seq 1 50); do
+              if curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null; then
+                break
+              fi
+              sleep 0.3
+            done
+            curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null
+          fi
+      - name: Download actual browser polygon, CP1252 and projected GIS exports
+        run: npm run smoke:qgis-browser-fixtures
+      - name: Open five browser/native files in installed QGIS and render real Qt map canvas
+        run: |
+          /usr/bin/python3 scripts/p43-qgis-qt-gui.py p43-qgis-fixtures
+      - name: Run P43 mobile-profile 3000-hole real GDAL and cancellation recovery
+        run: npm run smoke:mobile-resilience
+      - name: Independently re-check all 19 live GIS uploads and downloaded files on exact main SHA
+        if: github.ref_name == 'main'
+        run: node scripts/live-all-routes.mjs
+      - name: Re-run 19 actual public browser output previews and quality reports on exact main SHA
+        if: github.ref_name == 'main'
+        run: npm run smoke:preview-live
+      - name: Preserve QGIS GUI screenshot, browser download hashes, and layer validation
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p43-actual-qgis-desktop-qt-interoperability
+          path: |
+            site/p43-mobile-local-results.json
+            site/p43-mobile-live-results.json
+            site/p43-qgis-fixtures/browser-evidence.json
+            site/p43-qgis-fixtures/qgis-desktop-evidence.json
+            site/p43-qgis-fixtures/p43-qgis-desktop-map.png
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# Installed Ubuntu QGIS + its real Qt map widget under offscreen virtual display.
+# Automated GUI widget verification, not human GUI review or physical mobile device test.
