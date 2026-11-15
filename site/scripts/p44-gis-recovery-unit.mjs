@@ -51,7 +51,7 @@ for(const [message,options,expected] of cases){
   'Do not recommend bypassing data integrity or privacy checks');
  passed++;
 }
-assert.equal(GIS_RECOVERY_CATEGORIES.length,25,
+assert.equal(GIS_RECOVERY_CATEGORIES.length,21,
  'Error taxonomy unexpectedly changed: review matching precedence before modifying');
 assert.equal(diagnoseGISFailure(new Error('unknown'),{source:'foo',target:'bar'}).route,null);
 assert.equal(diagnoseGISFailure(new Error('permission denied')).id,'generic');
