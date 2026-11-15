@@ -111,6 +111,45 @@ try{
   return {deviceMemoryHintGiB:1,downloadAndQualityIntact:true,
    optionalPreviewSkipped:true,normalRetryRecovered:true};
  });
+ await test('p42_low_ram_batch_guard_blocks_before_worker_then_single_file_recovers',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  await page.addInitScript(()=>{
+   Object.defineProperty(navigator,'deviceMemory',{configurable:true,get:()=>1});
+   const Base=window.Worker;
+   window.__p42WorkerCreated=0;
+   window.Worker=class extends Base{
+    constructor(...args){super(...args);window.__p42WorkerCreated++}
+   };
+  });
+  await page.goto(origin+'/converter/kml-to-geojson/');
+  check(await page.locator('#memory-save').isChecked(),'Low RAM profile not selected');
+  const fake=Buffer.alloc(7*1024*1024,0x20);
+  await page.locator('#file').setInputFiles([
+   {name:'first.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:fake},
+   {name:'second.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:fake}
+  ]);
+  check((await page.locator('#error').innerText()).includes('12 MiB'),
+   '14 MiB batch must be rejected by the memory-saving 12 MiB cap');
+  await page.locator('#submit').click();
+  check(await page.evaluate(()=>window.__p42WorkerCreated)===0,
+   'Rejected batch launched GDAL despite resource guard');
+  check(await page.locator('#result').isHidden(),
+   'Rejected batch exposed a stale output');
+  await page.locator('#file').setInputFiles(
+   fixture(kml(116.4,39.9,'Recovery'),'p42-retry.kml'));
+  await page.locator('#submit').click();
+  try{await page.locator('#result').waitFor({state:'visible',timeout:110000})}
+  catch{throw Error('Low RAM failure recovery did not complete: '+await page.locator('#error').innerText())}
+  const [dl]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),page.locator('#download').click()
+  ]);
+  check(JSON.parse(fs.readFileSync(await dl.path(),'utf8')).features.length===1,
+   'Safe retry after batch guard did not preserve GIS output');
+  check(await page.evaluate(()=>window.__p42WorkerCreated)===1,
+   'Recovery should launch exactly one isolated Worker');
+  return {lowRamBatchRejectedBeforeWasm:true,staleDownloadNeverExposed:true,
+   singleFileRecovery:true};
+ });
  await test('p42_webkit_manual_low_memory_mode_preserves_gis_output',async()=>{
   const browserKit=await webkit.launch({headless:true});
   try{
@@ -374,14 +413,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===18&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===19&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:18,failed:report.failed,
+  status:report.status,passed:report.passed,expected:19,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();
