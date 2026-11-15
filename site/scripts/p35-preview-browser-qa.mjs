@@ -76,6 +76,101 @@ try{
    'Actual converted output attributes not shown');
   return {mappedFeatures:1,actualOutputVerified:true};
  });
+ await test('p42_chromium_low_memory_hint_saves_output_and_skips_only_optional_preview',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  await page.addInitScript(()=>{
+   Object.defineProperty(navigator,'deviceMemory',{configurable:true,get:()=>1});
+  });
+  const input=fixture(kml(116.4,39.9,'P42 autosave'),'p42-lowram.kml');
+  const first=await submit(page,'kml-to-geojson',input);
+  check(await page.locator('#memory-save').isChecked(),
+   'Device-memory hint of 1 GiB did not opt into conservative mode');
+  check(JSON.parse(first.bytes.toString('utf8')).features.length===1,
+   'Memory saving must preserve the actual GIS output');
+  check(await page.locator('#preview-body').getAttribute('data-status')==='unavailable',
+   'Optional preview must not allocate another GDAL dataset on low-memory profile');
+  const [qdl]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),
+   page.locator('#quality-download').click()
+  ]);
+  const quality=JSON.parse(fs.readFileSync(await qdl.path(),'utf8'));
+  check(quality.checks.find(c=>c.id==='point-coordinate-values')?.status==='pass',
+   'Memory saving must retain independent point fidelity checks');
+  // Disabling saver and retrying must restore optional SVG preview.
+  await page.locator('#memory-save').uncheck();
+  await page.locator('#file').setInputFiles(input);
+  await page.locator('#submit').click();
+  try{await page.locator('#result').waitFor({state:'visible',timeout:110000})}
+  catch{throw Error('Retry after disabling saver failed: '+await page.locator('#error').innerText())}
+  const [retryDownload]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),page.locator('#download').click()
+  ]);
+  check(JSON.parse(fs.readFileSync(await retryDownload.path(),'utf8')).features.length===1,
+   'Retry after disabling saver produced no GIS output');
+  await resultReady(page);
+  return {deviceMemoryHintGiB:1,downloadAndQualityIntact:true,
+   optionalPreviewSkipped:true,normalRetryRecovered:true};
+ });
+ await test('p42_low_ram_batch_guard_blocks_before_worker_then_single_file_recovers',async()=>{
+  const page=await browser.newPage({acceptDownloads:true});
+  await page.addInitScript(()=>{
+   Object.defineProperty(navigator,'deviceMemory',{configurable:true,get:()=>1});
+   const Base=window.Worker;
+   window.__p42WorkerCreated=0;
+   window.Worker=class extends Base{
+    constructor(...args){super(...args);window.__p42WorkerCreated++}
+   };
+  });
+  await page.goto(origin+'/converter/kml-to-geojson/');
+  check(await page.locator('#memory-save').isChecked(),'Low RAM profile not selected');
+  const fake=Buffer.alloc(7*1024*1024,0x20);
+  await page.locator('#file').setInputFiles([
+   {name:'first.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:fake},
+   {name:'second.kml',mimeType:'application/vnd.google-earth.kml+xml',buffer:fake}
+  ]);
+  check((await page.locator('#error').innerText()).includes('12 MiB'),
+   '14 MiB batch must be rejected by the memory-saving 12 MiB cap');
+  await page.locator('#submit').click();
+  check(await page.evaluate(()=>window.__p42WorkerCreated)===0,
+   'Rejected batch launched GDAL despite resource guard');
+  check(await page.locator('#result').isHidden(),
+   'Rejected batch exposed a stale output');
+  await page.locator('#file').setInputFiles(
+   fixture(kml(116.4,39.9,'Recovery'),'p42-retry.kml'));
+  await page.locator('#submit').click();
+  try{await page.locator('#result').waitFor({state:'visible',timeout:110000})}
+  catch{throw Error('Low RAM failure recovery did not complete: '+await page.locator('#error').innerText())}
+  const [dl]=await Promise.all([
+   page.waitForEvent('download',{timeout:15000}),page.locator('#download').click()
+  ]);
+  check(JSON.parse(fs.readFileSync(await dl.path(),'utf8')).features.length===1,
+   'Safe retry after batch guard did not preserve GIS output');
+  check(await page.evaluate(()=>window.__p42WorkerCreated)===1,
+   'Recovery should launch exactly one isolated Worker');
+  return {lowRamBatchRejectedBeforeWasm:true,staleDownloadNeverExposed:true,
+   singleFileRecovery:true};
+ });
+ await test('p42_webkit_manual_low_memory_mode_preserves_gis_output',async()=>{
+  const browserKit=await webkit.launch({headless:true});
+  try{
+   const page=await browserKit.newPage({acceptDownloads:true});
+   await page.goto(origin+'/converter/kml-to-geojson/');
+   await page.locator('#memory-save').check();
+   await page.locator('#file').setInputFiles(
+    fixture(kml(116.4,39.9,'WebKit conserve'),'p42-webkit.kml'));
+   await page.locator('#submit').click();
+   try{await page.locator('#result').waitFor({state:'visible',timeout:110000})}
+   catch{throw Error('WebKit low-memory output failed: '+await page.locator('#error').innerText())}
+   const [dl]=await Promise.all([
+    page.waitForEvent('download',{timeout:15000}),page.locator('#download').click()
+   ]);
+   check(JSON.parse(fs.readFileSync(await dl.path(),'utf8')).features.length===1,
+    'WebKit memory saver lost converted GIS points');
+   check(await page.locator('#preview-body').getAttribute('data-status')==='unavailable',
+    'WebKit memory saver did not skip optional preview');
+   return {engine:'WebKit',manualSavingEnabled:true,outputPreserved:true};
+  }finally{await browserKit.close()}
+ });
  await test('polygon_hole_to_shapefile_zip_svg_polygon_readback',async()=>{
   const page=await browser.newPage({acceptDownloads:true});
   const out=await submit(page,'geojson-to-shp',fixture(polygon,'park.geojson','application/geo+json'));
@@ -318,14 +413,14 @@ try{
    return {engine:'WebKit'};
   }finally{await browserKit.close()}
  });
- report.status=report.failed.length===0&&report.cases.length===16&&!report.errors.length?
+ report.status=report.failed.length===0&&report.cases.length===19&&!report.errors.length?
   'PASSED':'FAILED';
 }catch(e){report.fatal=String(e?.stack||e).slice(0,2500)}
 finally{
  report.passed=report.cases.filter(x=>x.status==='PASSED').length;
  fs.writeFileSync(outfile,JSON.stringify(report,null,2));
  console.log('P35_PREVIEW_SUMMARY '+JSON.stringify({
-  status:report.status,passed:report.passed,expected:16,failed:report.failed,
+  status:report.status,passed:report.passed,expected:19,failed:report.failed,
   pageErrors:report.errors,fatal:report.fatal
  }));
  await browser?.close();

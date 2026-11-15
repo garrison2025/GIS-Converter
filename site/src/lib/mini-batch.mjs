@@ -3,6 +3,7 @@
  * no account, and no claim that conversion is lossless.
  */
 import JSZip from 'jszip';
+import {LOW_MEMORY_BATCH_OUTPUT_BYTES} from './resource-budget.mjs';
 
 export const MAX_BATCH_FILES=3;
 export const MAX_FILE_BYTES=15*1024*1024;
@@ -40,7 +41,7 @@ export function safeBatchEntryName(value){
  * Each worker's output is retained in memory only until the user downloads
  * this archive; no URLs or raw input bytes are stored in the manifest.
  */
-export async function makeMiniBatchArchive({source,target,files,results,isCancelled=()=>false}){
+export async function makeMiniBatchArchive({source,target,files,results,isCancelled=()=>false,conserveMemory=false}){
  const selection=validateMiniBatchSelection(files);
  if(selection.count<2)throw Error('Use ordinary single-file download for one input.');
  if(selection.count!==results?.length)throw Error('Batch results do not match selected files.');
@@ -57,7 +58,7 @@ export async function makeMiniBatchArchive({source,target,files,results,isCancel
   if(!(bytes instanceof Uint8Array)||!bytes.byteLength)
    throw Error('Batch output '+(i+1)+' is empty or invalid.');
   totalOutput+=bytes.byteLength;
-  if(totalOutput>MAX_BATCH_OUTPUT_BYTES)
+  if(totalOutput>(conserveMemory?LOW_MEMORY_BATCH_OUTPUT_BYTES:MAX_BATCH_OUTPUT_BYTES))
    throw Error('Converted output exceeds the 96 MiB mini-batch packaging limit.');
   const prefix=String(i+1).padStart(2,'0')+'-';
   const savedName=prefix+safeBatchEntryName(result.name||'converted');
@@ -76,7 +77,8 @@ export async function makeMiniBatchArchive({source,target,files,results,isCancel
   });
  }
  zip.file('manifest.json',JSON.stringify(manifest,null,2));
- const archive=await zip.generateAsync({type:'uint8array',compression:'DEFLATE',
+ const archive=await zip.generateAsync({type:'uint8array',
+  compression:conserveMemory?'STORE':'DEFLATE',streamFiles:true,
   compressionOptions:{level:3}});
  if(isCancelled())throw Object.assign(new Error('Batch cancelled.'),{code:'CANCELLED'});
  return {name:'gis-'+source+'-to-'+target+'-batch-'+selection.count+'.zip',

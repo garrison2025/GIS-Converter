@@ -1,6 +1,6 @@
 // A single, isolated GDAL worker per conversion. Hard stop is intentionally used:
 // gdal3.js does not expose a documented per-operation cancellation API.
-export function runIsolatedConversion({file,source,target,timeoutMs=90000,workerFactory}){
+export function runIsolatedConversion({file,source,target,timeoutMs=90000,workerFactory,conserveMemory=false}){
  if(!file||!source||!target)throw new Error('Missing conversion request');
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>300000)throw new Error('Invalid timeout');
  const worker=workerFactory?workerFactory():new Worker(new URL('../workers/isolated-convert.worker.js',import.meta.url),{type:'classic'});
@@ -35,7 +35,7 @@ export function runIsolatedConversion({file,source,target,timeoutMs=90000,worker
  worker.onerror=(event)=>{event.preventDefault?.();finish('error',event.message||'Worker runtime error')};
  worker.onmessageerror=()=>finish('error','Unreadable worker message');
  timer=setTimeout(()=>finish('timeout'),timeoutMs);
- try{worker.postMessage({type:'convert',id,file,source,target})}
+ try{worker.postMessage({type:'convert',id,file,source,target,conserveMemory:conserveMemory===true})}
  catch(e){finish('error',e instanceof Error?e.message:String(e))}
  return {promise,cancel:()=>finish('cancelled'),get state(){return state}};
 }

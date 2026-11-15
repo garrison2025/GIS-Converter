@@ -42,6 +42,9 @@ const label=formats[from].name+' to '+formats[to].name;
  .uploadzone{border:1.5px dashed #9fc8c0;background:#f5fcfa;padding:18px 20px;border-radius:12px;margin:20px 0 15px;transition:border-color .15s,background .15s}
  .uploadzone[data-dragging="true"]{border-color:#08796d;background:#e1f6f0}
  .batch-info{font-size:12px;color:#436a76;margin:10px 0 0!important}
+ .uploadzone label.memory-option{display:flex;gap:9px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:#294e5d}
+ .memory-option input{flex:none;width:18px;height:18px;margin-top:3px;accent-color:#08796d}
+ .memory-help{font-size:12px;color:#54707c;margin:5px 0 0!important}
  .batch-info strong{color:#08796d}
  .uploadzone label{display:block;font-weight:700;margin-bottom:8px}
  input[type=file]{font:inherit;display:block;width:100%;color:#31546a;max-width:100%;font-size:14px}
@@ -128,6 +131,8 @@ const label=formats[from].name+' to '+formats[to].name;
    <input id="file" name="file" type="file" accept={info.source.accept} aria-describedby="file-info batch-help" multiple required/>
    <p class="small" id="file-info">{info.source.help}</p>
    <p class="batch-info" id="batch-help"><strong>Free mini-batch:</strong> choose or drop up to 3 files of the same format (15 MiB each, 30 MiB combined). One file downloads normally; multiple files download together as a ZIP with individual quality reports. A failed file stops the entire batch.</p>
+   <label class="memory-option" for="memory-save"><input type="checkbox" id="memory-save" aria-describedby="memory-help"/> Use memory-saving mode</label>
+   <p class="memory-help" id="memory-help">Skips the optional map preview, while keeping the converted file and its independent quality checks. Batches are limited to 12 MiB input and 24 MiB output. Automatically suggested on browsers reporting 2 GiB RAM or less. This is not a measurement of free memory.</p>
   </div>
   <div class="actions"><button id="submit" type="submit">Convert to {info.target.name} <span aria-hidden="true">→</span></button><button id="cancel" type="button" hidden>Cancel conversion</button></div>
   <p id="status" class="status" role="status" aria-live="polite">Ready to convert.</p>
@@ -192,12 +197,15 @@ const label=formats[from].name+' to '+formats[to].name;
 <script>
 import {routes} from '../../lib/gdal-matrix.mjs';
 import {runIsolatedConversion} from '../../lib/isolated-task.mjs';
+import {suggestedMemorySavingMode,checkMemorySavingSelection} from '../../lib/resource-budget.mjs';
 const form=document.querySelector('#converter');
 const status=document.querySelector('#status'),btn=document.querySelector('#submit');
 const file=document.querySelector('#file'),error=document.querySelector('#error'),result=document.querySelector('#result');
 const cancelButton=document.querySelector('#cancel');
 const selected=document.querySelector('#file-info');
 const previewPanel=document.querySelector('#preview-panel');
+const memoryOption=document.querySelector('#memory-save');
+memoryOption.checked=suggestedMemorySavingMode(navigator.deviceMemory);
 const placeholder=selected.textContent;
 let linkUrl=null,reportUrl=null,activeTask=null;
 const MAX_FILES=3;
@@ -212,8 +220,16 @@ function selectionError(files){
  if(files.some(f=>f.size>MAX_FILE_BYTES))return 'Each input must be 15 MiB or smaller.';
  if(files.reduce((total,f)=>total+f.size,0)>MAX_BATCH_BYTES)
   return 'The combined input exceeds the 30 MiB mini-batch limit.';
- return null;
+ return checkMemorySavingSelection(files,memoryOption.checked);
 }
+memoryOption.addEventListener('change',()=>{
+ // Never clear the selected local file; review limits before conversion.
+ const inputs=Array.from(file.files||[]);
+ error.hidden=true;error.textContent='';
+ status.textContent='Ready to convert.';
+ const issue=selectionError(inputs);
+ if(issue)showSelectionError(issue);
+});
 file.addEventListener('change',()=>{
  resetOutput();
  error.hidden=true;error.textContent='';
@@ -281,7 +297,7 @@ form?.addEventListener('submit',async(event)=>{
  const inputs=Array.from(file.files);
  const issue=selectionError(inputs);
  if(issue){showSelectionError(issue);return;}
- btn.disabled=true;file.disabled=true;cancelButton.hidden=false;
+ btn.disabled=true;file.disabled=true;memoryOption.disabled=true;cancelButton.hidden=false;
  form.setAttribute('aria-busy','true');
  status.textContent='Starting browser-local conversion…';
  let operation;
@@ -289,7 +305,8 @@ form?.addEventListener('submit',async(event)=>{
   let output;
   if(inputs.length===1){
    operation=runIsolatedConversion({
-    file:inputs[0],source:tuple[1],target:tuple[2],timeoutMs:90000
+    file:inputs[0],source:tuple[1],target:tuple[2],timeoutMs:90000,
+    conserveMemory:memoryOption.checked
    });
    activeTask=operation;
    output=await operation.promise;
@@ -312,7 +329,8 @@ form?.addEventListener('submit',async(event)=>{
     status.textContent='Converting file '+(i+1)+' of '+inputs.length+
      ': '+inputs[i].name+' (locally in your browser)…';
     const worker=runIsolatedConversion({
-     file:inputs[i],source:tuple[1],target:tuple[2],timeoutMs:90000
+     file:inputs[i],source:tuple[1],target:tuple[2],timeoutMs:90000,
+     conserveMemory:memoryOption.checked
     });
     batch.current=worker;
     try{outputs.push(await worker.promise)}
@@ -325,7 +343,7 @@ form?.addEventListener('submit',async(event)=>{
    status.textContent='Packaging '+inputs.length+' converted files and quality reports…';
    const zipped=await makeMiniBatchArchive({
     source:tuple[1],target:tuple[2],files:inputs,results:outputs,
-    isCancelled:()=>batch.cancelled
+    isCancelled:()=>batch.cancelled,conserveMemory:memoryOption.checked
    });
    output={
     ...zipped,
@@ -401,7 +419,7 @@ form?.addEventListener('submit',async(event)=>{
   }
  }finally{
   if(!operation||activeTask===operation){
-   activeTask=null;btn.disabled=false;file.disabled=false;
+   activeTask=null;btn.disabled=false;file.disabled=false;memoryOption.disabled=false;
    cancelButton.hidden=true;form.removeAttribute('aria-busy');
   }
  }

@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import {applyGpxElevationToKml} from './gpx-elevation.mjs';
 import {enhanceGpxTimedKml} from './gpx-timed-track.mjs';
+import {repairLegacyShpGeojson} from './legacy-shapefile-text.mjs';
 export const routes=[
 ['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
 ['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
@@ -61,6 +62,20 @@ export async function convertGdal(gdal,input,src,dst){
    files.set(kmlKey,timed.bytes);
   }
  }
+ // Some GDAL/WASM builds misdecode Windows-1252 DBF text even with a
+ // native .cpg. Re-read original DBF bytes on this SHP→GeoJSON route and
+ // correct only strings which independently match the observed mojibake.
+ // Fail closed if a legacy source cannot be reconciled without guessing.
+ let legacyTextWarning='';
+ if(src==='shp'&&dst==='geojson'){
+  const key=[...files.keys()].find(name=>name.toLowerCase().endsWith('.geojson'));
+  if(key){
+   const checked=await repairLegacyShpGeojson(input,files.get(key));
+   if(checked.bytes)files.set(key,checked.bytes);
+   if(checked.status==='cp1252-corrected')legacyTextWarning=
+    'Legacy CP1252 DBF text was independently decoded and corrected locally. Review output names and field types in your GIS software.';
+  }
+ }
  if(dst==='shp'){
   const exts=[...files.keys()].map(n=>n.toLowerCase().split('.').pop());
   for(const ext of ['shp','shx','dbf'])if(!exts.includes(ext))throw Error('Shapefile missing .'+ext);
@@ -76,7 +91,7 @@ export async function convertGdal(gdal,input,src,dst){
  const ext=dst==='geojson'?'geojson':dst;
  const key=[...files.keys()].find(n=>n.toLowerCase().endsWith('.'+ext));
  if(!key)throw Error('Expected '+ext+' missing: '+[...files.keys()].join(','));
- return {name:'converted.'+ext,bytes:files.get(key),mime:dst==='geojson'?'application/geo+json':'text/plain',files:[...files.keys()],warning:dst==='gpx'?'GPX cannot represent polygon geometries; information may be lost.':''};
+ return {name:'converted.'+ext,bytes:files.get(key),mime:dst==='geojson'?'application/geo+json':'text/plain',files:[...files.keys()],warning:[dst==='gpx'?'GPX cannot represent polygon geometries; information may be lost.':'',legacyTextWarning].filter(Boolean).join(' ')};
 }
 const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Sample Point</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
 export async function makeFixture(format,shpZip){
