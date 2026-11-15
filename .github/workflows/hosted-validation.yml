@@ -71,6 +71,8 @@ jobs:
         run: npm run smoke:all-ui
       - name: P31 verify mobile width keyboard navigation stale output Blob cleanup and retry
         run: npm run smoke:mobile-local
+      - name: P43 verify real GDAL polygon conversion mobile-profile cancel retry and WebKit touch
+        run: npm run smoke:mobile-resilience
       - name: P34 verify free 3-file browser batch ZIP in Chromium Firefox WebKit, drag-drop and atomic cancellation
         run: npm run smoke:mini-batch-local
       - name: P35 real Chromium Firefox WebKit preview of converted SHP KML KMZ GPX CSV and batch
