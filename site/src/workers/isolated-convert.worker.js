@@ -2,6 +2,7 @@ import {convertGdal} from '../lib/gdal-matrix.mjs';
 import {preflightGISInput} from '../lib/input-preflight.mjs';
 import {createGISQualityReport,assertNoDetectedCriticalDataLoss} from '../lib/quality-report.mjs';
 import {extractConvertedOutputPreview} from '../lib/converted-output-preview.mjs';
+import {shouldRenderOptionalPreview} from '../lib/resource-budget.mjs';
 
 // The actual GDAL/WASM runtime is scoped to this dedicated, replaceable worker.
 // No file contents leave the browser. Hard termination cancels both parsing and conversion.
@@ -32,8 +33,15 @@ self.addEventListener('message',async({data})=>{
   // Optional visualization samples the actual downloaded output, never the
   // original input. A preview failure MUST NOT block a good GIS export.
   let preview;
-  try{preview=await extractConvertedOutputPreview(gdal,bytes,target)}
-  catch{preview={status:'unavailable',reason:'Optional preview could not be generated. Download is unaffected.'}}
+  if(!shouldRenderOptionalPreview(data.conserveMemory===true)){
+   // The GDAL preview can instantiate extra in-memory datasets. Skip this
+   // optional pass entirely on constrained devices; keep actual output and
+   // independent quality checks intact.
+   preview={status:'unavailable',reason:'Memory-saving mode skipped optional map preview. The converted file and quality report are still available.'};
+  }else{
+   try{preview=await extractConvertedOutputPreview(gdal,bytes,target)}
+   catch{preview={status:'unavailable',reason:'Optional preview could not be generated. Download is unaffected.'}}
+  }
   self.postMessage({type:'success',id,name:result.name,mime:result.mime,warning:result.warning,bytes,quality,preview},[bytes.buffer]);
  }catch(e){
   const message=e instanceof Error?e.message:(typeof e==='string'?e:JSON.stringify(e));
