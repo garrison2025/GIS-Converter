@@ -69,15 +69,16 @@ limits.
 - `npm run smoke:legacy-dbf` checks raw-byte CP1252 decoding, exact
   row/field correspondence, already-correct values, numeric and
   coordinate preservation, and fail-closed unsafe cases.
-- The existing browser preview test suite increases from **16 to 18**
+- The existing browser preview test suite increases from **16 to 19**
   actual cases, adding Chromium automated low-RAM simulation,
   preserved downloadable GIS output and report, ordinary retry with
-  preview restored, and WebKit manual memory-saving conversion.
+  preview restored, WebKit manual memory-saving conversion, plus 14 MiB batch rejection
+  before GDAL/WASM and successful single-file recovery.
 - Native OGR interoperability extends from **six to seven** distinct
   cases; the added source is produced by native GDAL and read in the
   real browser GDAL/WASM converter, not by the website's own encoder.
 - The P42 public acceptance gate waits for the exact merged commit in
-  Cloudflare Pages, then checks **18 real browser cases**, 7 native
+  Cloudflare Pages, then checks **19 real browser cases**, 7 native
   interoperability cases and **all 19 upload/download routes**.
 
 ## Limits / deployment state
