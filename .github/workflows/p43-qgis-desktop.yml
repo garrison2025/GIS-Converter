@@ -68,6 +68,8 @@ jobs:
         with:
           name: gis-p43-actual-qgis-desktop-qt-interoperability
           path: |
+            site/p43-mobile-local-results.json
+            site/p43-mobile-live-results.json
             site/p43-qgis-fixtures/browser-evidence.json
             site/p43-qgis-fixtures/qgis-desktop-evidence.json
             site/p43-qgis-fixtures/p43-qgis-desktop-map.png
