@@ -53,6 +53,8 @@
     "smoke:legacy-dbf": "node scripts/p42-cp1252-dbf.mjs",
     "smoke:mobile-resilience": "node scripts/p43-mobile-resilience.mjs",
     "smoke:qgis-browser-fixtures": "node scripts/p43-browser-qgis-fixtures.mjs",
+    "smoke:recovery-unit": "node scripts/p44-gis-recovery-unit.mjs",
+    "smoke:recovery-browser": "node scripts/p44-gis-recovery-browser.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },

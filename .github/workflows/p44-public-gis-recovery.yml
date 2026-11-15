@@ -1,0 +1,54 @@
+name: GIS Converter P44 error recovery public acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p44-public-recovery-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p44-public-gis-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact merged P44 SHA on Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned browser and GIS test dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Verify static recovery classifier and privacy-safe error taxonomy
+        run: npm run smoke:recovery-unit
+      - name: Verify exact public release noindex and 19 route manifest
+        run: npm run smoke:live-release
+      - name: Verify 8 real browser error recovery instructions and successful SHP retry
+        run: npm run smoke:recovery-browser
+      - name: Independently exercise 19 public GIS converter uploads and downloads
+        run: node scripts/live-all-routes.mjs
+      - name: Verify 19 public browser SVG GIS output previews and quality reports
+        run: npm run smoke:preview-live
+      - name: Preserve sanitized public recovery and exact-release test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p44-public-actionable-error-recovery
+          path: |
+            site/p44-guidance-live-results.json
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# No private GIS input is uploaded. No actual billing or SEO launch.

@@ -41,6 +41,8 @@ jobs:
         run: npm run smoke:memory-policy
       - name: P42 byte-verify CP1252 Shapefile to GeoJSON field repair without guessing
         run: npm run smoke:legacy-dbf
+      - name: P44 categorize GIS failures without reflecting coordinates, paths or user attributes
+        run: npm run smoke:recovery-unit
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -53,6 +55,8 @@ jobs:
         run: node scripts/isolated-worker-probe.mjs
       - name: Reject hostile GIS archives before loading WebAssembly
         run: npm run smoke:input-security
+      - name: P44 browser-verify CRS ZIP CSV geometry error recovery, safe redaction and real retry
+        run: npm run smoke:recovery-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
