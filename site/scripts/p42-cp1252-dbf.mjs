@@ -51,8 +51,9 @@ await assert.rejects(
  ()=>repairLegacyShpGeojson(input,doc(['other','áé'])),
  /Legacy Shapefile DBF encoding could not be safely preserved/
 );
+const unknownEncoding=new File([await fixture(original,'CP1251')],'map.zip');
 await assert.rejects(
- ()=>repairLegacyShpGeojson(new File([await fixture(original,'CP1251')],'map.zip'),doc(mojibake)),
+ ()=>repairLegacyShpGeojson(unknownEncoding,doc(mojibake)),
  /Legacy Shapefile DBF encoding could not be safely preserved/
 );
 await assert.rejects(
