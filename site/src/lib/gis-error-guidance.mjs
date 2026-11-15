@@ -28,7 +28,7 @@ const guidance={
    'With a verified CRS, re-export or reproject in QGIS to EPSG:4326, preserving attributes.',
    'Retry and compare output coordinates in QGIS. Do not guess the source EPSG code.']),
  'geometry-mixed':make('geometry-mixed','Mixed geometry types need separate layers',
-  'Mixed geometry families cannot safely become one Shapefile layer.',
+  'mixed geometry families cannot safely become one Shapefile layer.',
   ['In QGIS, separate Point/MultiPoint, LineString/MultiLineString and Polygon/MultiPolygon into distinct layers.',
    'Export each layer as GeoJSON with its CRS preserved or explicitly transformed.',
    'Convert each file independently and compare feature counts and geometry components.']),
