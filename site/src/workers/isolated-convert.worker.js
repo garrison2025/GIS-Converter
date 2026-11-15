@@ -28,7 +28,7 @@ self.addEventListener('message',async({data})=>{
   }
   catch(e){
     if(e?.code==='DATA_LOSS')throw e;
-    quality={status:'review',checks:[{id:'inspection',status:'review',detail:'Quality inspection failed: '+String(e?.message||e)}],disclaimer:'Automated quality reporting could not complete. Verify output in independent GIS software.'};
+    quality={status:'review',checks:[{id:'inspection',status:'review',detail:'Quality inspection failed: the local structural inspector did not complete. Verify all output data independently in GIS software.'}],disclaimer:'Automated quality reporting could not complete. Verify output in independent GIS software.'};
   }
   // Optional visualization samples the actual downloaded output, never the
   // original input. A preview failure MUST NOT block a good GIS export.
