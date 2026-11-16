@@ -43,6 +43,8 @@ jobs:
         run: npm run smoke:legacy-dbf
       - name: P44 categorize GIS failures without reflecting coordinates, paths or user attributes
         run: npm run smoke:recovery-unit
+      - name: P45 syntax check browser acceptance before installing browsers
+        run: node --check scripts/p45-product-ux-browser.mjs
       - name: P45 verify the 19 converter routes and practical guide completeness without loading GDAL
         run: npm run smoke:route-catalog
       - name: Stage real GDAL/WASM and record SHA256 and sizes
