@@ -104,7 +104,7 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
   <p class="search-status" id="result-count" role="status" aria-live="polite">Showing 19 of 19 converter routes</p>
   {groups.map(g=><section class="group" data-group={g.source} id={'from-'+g.source}>
     <div class="grouphead"><h3>From {g.label}</h3><span>{g.links.length} tools</span></div>
-    <div class="cards">{g.links.map(([slug,src,dst])=><a class="tool" href={'/converter/'+slug+'/'} data-search={(slug+' '+src+' '+dst+' '+formats[src].name+' '+formats[dst].name+' '+formats[src].long+' '+formats[dst].long).toLowerCase()}>
+    <div class="cards">{g.links.map(([slug,src,dst])=><a class="tool" href={'/converter/'+slug+'/'} data-search={(slug+' '+src+' '+dst+' '+formats[src].name+' '+formats[dst].name+' '+formats[src].long+' '+formats[dst].long).toLowerCase()} data-source-search={(src+' '+formats[src].name+' '+formats[src].long).toLowerCase()} data-target-search={(dst+' '+formats[dst].name+' '+formats[dst].long).toLowerCase()}>
       <strong>{formats[src].name} <span aria-hidden="true">→</span> {formats[dst].name}</strong>
       <p>{formats[src].long} to {formats[dst].long}</p>
       <span>Open converter →</span>
@@ -132,13 +132,17 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  const search=document.querySelector('#filter');
  const updateSearch=()=>{
   const raw=search.value.trim().toLowerCase().replace(/[\s_-]+/g,' ');
+  const directional=raw.match(/^(.+?) to (.+)$/);
   const tokens=raw.split(' ').filter(token=>token&&token!=='to'&&token!=='convert'&&token!=='converter');
   let visible=0;
   document.querySelectorAll('.group').forEach(group=>{
    let groupCount=0;
    group.querySelectorAll('.tool').forEach(card=>{
     const haystack=card.dataset.search.replace(/[\s_-]+/g,' ');
-    const matches=tokens.every(token=>haystack.includes(token));
+    const matches=directional?
+     directional[1].split(' ').every(token=>card.dataset.sourceSearch.includes(token))&&
+     directional[2].split(' ').every(token=>card.dataset.targetSearch.includes(token)):
+     tokens.every(token=>haystack.includes(token));
     card.hidden=!matches;
     if(matches){visible++;groupCount++}
    });
