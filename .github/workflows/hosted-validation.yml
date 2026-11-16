@@ -49,6 +49,8 @@ jobs:
         run: npm run smoke:route-catalog
       - name: P46 validate six local demo inputs and byte-level Shapefile correctness
         run: npm run smoke:demo-unit
+      - name: P47 unit-verify route geometry options and independent SHP Line/Polygon ring records
+        run: npm run smoke:scenario-unit
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
