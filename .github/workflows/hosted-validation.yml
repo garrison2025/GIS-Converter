@@ -73,6 +73,8 @@ jobs:
         run: npm run smoke:demo-browser
       - name: P47 run every supported line, GPS track and polygon-hole example through actual GDAL
         run: npm run smoke:scenario-browser
+      - name: P48 verify real GDAL Unicode attributes, numeric precision, CJK names and schema risk
+        run: npm run smoke:attribute-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
