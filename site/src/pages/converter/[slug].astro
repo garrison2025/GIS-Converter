@@ -1,5 +1,5 @@
 ---
-import {routes} from '../../lib/gdal-matrix.mjs';
+import {routes,FORMAT_CODES} from '../../lib/converter-routes.mjs';
 import {getRouteNote, formats} from '../../data/content.mjs';
 import {routeGuides} from '../../data/route-guides.mjs';
 import {getSeoLaunchConfig} from '../../lib/seo-launch-config.mjs';
@@ -39,6 +39,15 @@ const label=formats[from].name+' to '+formats[to].name;
  .card{background:#fff;border:1px solid #dce7eb;border-radius:16px;padding:24px;box-shadow:0 5px 24px #1348610b}
  .card h2{margin:0 0 7px;font-size:20px;letter-spacing:-.025em}
  .card p{margin:6px 0 14px;color:#506b7b;font-size:14px}
+ .route-switch label{display:block;font-size:13px;font-weight:750;color:#31566a;margin:10px 0}
+ .route-switch select{display:block;width:100%;min-height:44px;background:#fff;color:#193c4c;border:1px solid #b1c8cb;border-radius:9px;padding:8px 10px;font:inherit;margin-top:5px}
+ .route-switch select:focus-visible,.route-switch .switch-open:focus-visible{outline:3px solid #bde8df;outline-offset:2px}
+ .route-switch .switch-open{display:inline-flex;width:100%;justify-content:center;padding:11px 14px;margin:11px 0 0;background:#08796d;color:#fff;border-radius:9px;text-decoration:none;font-weight:750;font-size:13px}
+ .route-switch .switch-open:hover{background:#06675d}
+ .route-switch .switch-hint{font-size:12px;margin-top:10px!important}
+ .change-route{font-size:13px;font-weight:750}
+ .again-button{background:#fff;color:#076e63;border-color:#08796d;margin:8px 0 0}
+ .again-button:hover{background:#e6f6ef}
  .uploadzone{border:1.5px dashed #9fc8c0;background:#f5fcfa;padding:18px 20px;border-radius:12px;margin:20px 0 15px;transition:border-color .15s,background .15s}
  .uploadzone[data-dragging="true"]{border-color:#08796d;background:#e1f6f0}
  .batch-info{font-size:12px;color:#436a76;margin:10px 0 0!important}
@@ -128,6 +137,7 @@ const label=formats[from].name+' to '+formats[to].name;
  <h1>{label} — online file converter</h1>
  <p class="lead">{info.context}</p>
  <div class="meta"><span class="tag">{seo.indexable?'Free GIS converter':'Free test tool'}</span><span class="tag">Single file or up to 3 in a batch</span><span class="tag">15 MiB per file</span><span class="tag">No file uploads to our servers</span></div>
+ <p class="change-route">Wrong input or output format? <a href="#route-switch">Choose a different converter</a></p>
  <div class="grid">
  <div>
  <form id="converter" class="card" data-slug={slug} data-target-name={info.target.name} aria-label={label+' conversion form'}>
@@ -160,12 +170,27 @@ const label=formats[from].name+' to '+formats[to].name;
      <p class="small">A structural check, not a guarantee of data accuracy. Review geometry, fields and coordinates in independent GIS software.</p>
    </section>
    <a id="download" class="download" href="#" download>Download {info.target.name} <span aria-hidden="true">↓</span></a>
+   <button id="convert-again" class="again-button" type="button" aria-describedby="again-note">Convert another file</button>
+   <p id="again-note" class="small">Download the current file and quality report first. Choosing another file clears the previous local download links.</p>
    <section id="preview-panel" class="preview-panel" aria-label="Local converted GIS output vector preview" hidden></section>
   </section>
  </form>
  <div class="note" role="note"><strong>Important: experimental converter</strong><p>Results are not automatically certified. Verify geometry, attributes and coordinate reference system in your GIS software before using the file for professional or critical decisions.</p></div>
  </div>
  <aside class="sidebar" aria-label="Format requirements">
+  <div class="card route-switch" id="route-switch" role="group" aria-label="Switch GIS converter route">
+   <h2>Choose another converter</h2>
+   <p>Only supported source and output pairs are offered.</p>
+   <label for="switch-from">Input format
+    <select id="switch-from" data-route-source>{FORMAT_CODES.map(code=><option value={code} selected={code===from}>{formats[code].name}</option>)}</select>
+   </label>
+   <label for="switch-to">Output format
+    <select id="switch-to" data-route-target>{FORMAT_CODES.map(code=><option value={code} selected={code===to}>{formats[code].name}</option>)}</select>
+   </label>
+   <a class="switch-open" id="switch-open" href={'/converter/'+slug+'/'} data-route-link>Open selected converter</a>
+   <p class="switch-hint" data-route-hint aria-live="polite">Choose a supported conversion route.</p>
+   <p class="small">Switching pages does not carry over selected files or downloads.</p>
+  </div>
   <div class="card"><h2>Input requirements</h2><p>{info.source.help}</p>
    <ul><li>File size: maximum 15 MiB</li><li>Unencrypted files only</li><li>Local browser processing</li></ul>
   </div>
@@ -207,10 +232,12 @@ const label=formats[from].name+' to '+formats[to].name;
 </main>
 <footer class="container footer"><a href="/">← All 19 GIS converters</a><span>{seo.indexable?'Free browser tools · No paid features enabled':'Engineering preview · No paid features enabled · Noindex'}</span></footer>
 <script>
-import {routes} from '../../lib/gdal-matrix.mjs';
+import {routes} from '../../lib/converter-routes.mjs';
+import {bindRoutePicker} from '../../lib/route-picker.mjs';
 import {runIsolatedConversion} from '../../lib/isolated-task.mjs';
 import {suggestedMemorySavingMode,checkMemorySavingSelection} from '../../lib/resource-budget.mjs';
 import {diagnoseGISFailure} from '../../lib/gis-error-guidance.mjs';
+bindRoutePicker(document.querySelector('#route-switch'));
 const form=document.querySelector('#converter');
 const status=document.querySelector('#status'),btn=document.querySelector('#submit');
 const file=document.querySelector('#file'),error=document.querySelector('#error'),result=document.querySelector('#result');
@@ -329,6 +356,17 @@ const resetOutput=()=>{
  const dl=document.querySelector('#download');dl.removeAttribute('href');
  const qa=document.querySelector('#quality-download');qa.removeAttribute('href');
 };
+document.querySelector('#convert-again').addEventListener('click',()=>{
+ if(activeTask)return;
+ resetOutput();
+ file.value='';
+ selected.textContent=placeholder;
+ error.hidden=true;
+ error.textContent='';
+ status.textContent='Choose another '+(form.dataset.slug.split('-to-')[0]||'GIS')+
+  ' file to convert. Previous local download links are cleared.';
+ file.focus({preventScroll:true});
+});
 cancelButton.addEventListener('click',()=>activeTask?.cancel());
 form?.addEventListener('submit',async(event)=>{
  event.preventDefault();

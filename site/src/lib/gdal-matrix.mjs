@@ -2,16 +2,8 @@ import JSZip from 'jszip';
 import {applyGpxElevationToKml} from './gpx-elevation.mjs';
 import {enhanceGpxTimedKml} from './gpx-timed-track.mjs';
 import {repairLegacyShpGeojson} from './legacy-shapefile-text.mjs';
-export const routes=[
-['kmz-to-shp','kmz','shp'],['kml-to-shp','kml','shp'],['shp-to-kml','shp','kml'],
-['kmz-to-gpx','kmz','gpx'],['kml-to-gpx','kml','gpx'],['gpx-to-kml','gpx','kml'],
-['kmz-to-kml','kmz','kml'],['kml-to-kmz','kml','kmz'],['geojson-to-shp','geojson','shp'],
-['shp-to-geojson','shp','geojson'],['geojson-to-kml','geojson','kml'],
-['kml-to-geojson','kml','geojson'],['shp-to-kmz','shp','kmz'],
-['kml-to-csv','kml','csv'],['kmz-to-csv','kmz','csv'],
-['csv-to-kml','csv','kml'],['csv-to-kmz','csv','kmz'],
-['gpx-to-kmz','gpx','kmz'],['kmz-to-geojson','kmz','geojson']
-];
+import {routes} from './converter-routes.mjs';
+export {routes};
 const types={shp:'ESRI Shapefile',kml:'KML',gpx:'GPX',geojson:'GeoJSON',csv:'CSV',kmz:'KML'};
 function safeName(n){const b=String(n).split('/').pop();if(!/^[a-zA-Z0-9_.-]{1,130}$/.test(b)||b==='.'||b==='..')throw Error('Unsafe output path '+n);return b;}
 async function collect(gdal,path){

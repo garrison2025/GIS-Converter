@@ -1,5 +1,5 @@
 ---
-import {routes} from '../lib/gdal-matrix.mjs';
+import {routes,FORMAT_CODES} from '../lib/converter-routes.mjs';
 import {formats} from '../data/content.mjs';
 import {getSeoLaunchConfig} from '../lib/seo-launch-config.mjs';
 const seo=getSeoLaunchConfig(process.env);
@@ -33,6 +33,14 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  .herocta{display:flex;align-items:center;gap:13px;flex-wrap:wrap}
  .primary{text-decoration:none;color:#fff;background:#08796d;padding:12px 22px;font-weight:700;border-radius:11px;display:inline-flex;gap:10px;align-items:center}
  .primary:hover{background:#06675d}.micro{font-size:13px;color:#607582}
+ .quick-finder{display:grid;grid-template-columns:1fr 1fr auto;align-items:end;gap:12px;background:#fff;border:1px solid #cbdfe1;border-radius:16px;padding:19px;max-width:800px;margin:25px 0 0;box-shadow:0 9px 30px #19465a13}
+ .quick-finder label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:750;color:#294d60}
+ .quick-finder select{font:inherit;color:#143b4c;width:100%;background:#fff;border:1px solid #afc7c9;border-radius:9px;padding:10px 12px;min-height:46px}
+ .quick-finder select:focus-visible,.quick-open:focus-visible{outline:3px solid #bde8df;outline-offset:2px}
+ .quick-finder .quick-open{display:inline-flex;justify-content:center;align-items:center;text-decoration:none;white-space:nowrap;padding:12px 18px;background:#08796d;color:#fff;border-radius:10px;font-size:14px;font-weight:800;min-height:46px}
+ .quick-finder .quick-open:hover{background:#06675d}
+ .finder-hint{grid-column:1/-1;color:#516d79;font-size:12px;margin:0}
+ .search-status{font-size:13px;color:#516d79;margin:12px 0 0}
  .stats{display:flex;gap:10px;flex-wrap:wrap;margin-top:34px}
  .chip{font-size:13px;background:#fff;border:1px solid #dae9e5;border-radius:99px;padding:6px 13px;color:#33586b}
  .section{padding:50px 0}
@@ -59,7 +67,7 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  .footer{padding:26px 0;border-top:1px solid #e1e9ec;font-size:13px;color:#607583;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
  [hidden]{display:none!important}
  @media(max-width:800px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:1fr;gap:12px}.hero{padding:50px 0}.navlinks{gap:10px}}
- @media(max-width:530px){.cards{grid-template-columns:1fr}.navlinks a:last-child{display:none}.tool{min-height:120px}.section{padding:35px 0}.intro{font-size:16px}}
+ @media(max-width:530px){.cards{grid-template-columns:1fr}.navlinks a:last-child{display:none}.tool{min-height:120px}.section{padding:35px 0}.intro{font-size:16px}.quick-finder{grid-template-columns:1fr}.quick-open{width:100%}}
  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.tool{transition:none}}
  </style>
 </head>
@@ -75,17 +83,28 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
    <p class="eyebrow">Private by design · GDAL-powered</p>
    <h1>Convert GIS files in your browser.</h1>
    <p class="intro">Convert KML, KMZ, Shapefile, GeoJSON, GPX and CSV without uploading your data to a conversion server. Choose one of 19 format routes, convert one file or a free mini-batch of up to three files, and download the result locally.</p>
-   <div class="herocta"><a href="#tools" class="primary">Explore 19 converters <span aria-hidden="true">→</span></a><span class="micro">No account required · Up to 3 files per batch</span></div>
+   <div class="herocta"><a href="#tools" class="primary">Browse all 19 converters <span aria-hidden="true">→</span></a><span class="micro">No account required · Up to 3 files per batch</span></div>
+   <div class="quick-finder" id="quick-finder" role="group" aria-label="Find a supported GIS conversion route">
+    <label for="quick-from">Convert from
+     <select id="quick-from" data-route-source>{FORMAT_CODES.map(code=><option value={code} selected={code==='kml'}>{formats[code].name}</option>)}</select>
+    </label>
+    <label for="quick-to">Convert to
+     <select id="quick-to" data-route-target>{FORMAT_CODES.map(code=><option value={code} selected={code==='shp'}>{formats[code].name}</option>)}</select>
+    </label>
+    <a class="quick-open" id="quick-open" data-route-link href="/converter/kml-to-shp/">Open converter</a>
+    <p class="finder-hint" data-route-hint aria-live="polite">Choose your source and destination formats; only available routes can be opened.</p>
+   </div>
    <div class="stats" aria-label="Product facts"><span class="chip">Files stay in your browser</span><span class="chip">GDAL/WebAssembly engine</span><span class="chip">19 conversion routes</span><span class="chip">Free 3-file mini-batch</span><span class="chip">{seo.indexable?'Free GIS tools':'Free engineering preview'}</span></div>
   </div>
  </section>
  <section id="tools" class="section container">
   <div class="sectionhead"><div><h2>Choose your conversion</h2><p>Browse by source format or filter the tools.</p></div>
-   <label><span class="sr-only" style="position:absolute;left:-9999px">Search conversion tools</span><input class="search" id="filter" type="search" placeholder="Search, e.g. KMZ to SHP" aria-label="Search conversion tools"/></label>
+   <label><span class="sr-only" style="position:absolute;left:-9999px">Search conversion tools</span><input class="search" id="filter" type="search" placeholder="Search SHP, Shapefile, GeoJSON…" aria-label="Search conversion tools"/></label>
   </div>
+  <p class="search-status" id="result-count" role="status" aria-live="polite">Showing 19 of 19 converter routes</p>
   {groups.map(g=><section class="group" data-group={g.source} id={'from-'+g.source}>
     <div class="grouphead"><h3>From {g.label}</h3><span>{g.links.length} tools</span></div>
-    <div class="cards">{g.links.map(([slug,src,dst])=><a class="tool" href={'/converter/'+slug+'/'} data-search={(slug+' '+src+' '+dst).toLowerCase()}>
+    <div class="cards">{g.links.map(([slug,src,dst])=><a class="tool" href={'/converter/'+slug+'/'} data-search={(slug+' '+src+' '+dst+' '+formats[src].name+' '+formats[dst].name+' '+formats[src].long+' '+formats[dst].long).toLowerCase()} data-source-search={(src+' '+formats[src].name+' '+formats[src].long).toLowerCase()} data-target-search={(dst+' '+formats[dst].name+' '+formats[dst].long).toLowerCase()}>
       <strong>{formats[src].name} <span aria-hidden="true">→</span> {formats[dst].name}</strong>
       <p>{formats[src].long} to {formats[dst].long}</p>
       <span>Open converter →</span>
@@ -108,20 +127,31 @@ const groups=['kml','kmz','shp','geojson','gpx','csv'].map(source=>({
  </main>
  <footer class="container footer"><span>© GIS Converter · Engineering preview</span><span>Browser-local conversion · No payment features enabled</span></footer>
  <script>
+ import {bindRoutePicker} from '../lib/route-picker.mjs';
+ bindRoutePicker(document.querySelector('#quick-finder'));
  const search=document.querySelector('#filter');
- search?.addEventListener('input',()=>{
-  const query=search.value.trim().toLowerCase().replace(/\s+/g,'-');
+ const updateSearch=()=>{
+  const raw=search.value.trim().toLowerCase().replace(/[\s_-]+/g,' ');
+  const directional=raw.match(/^(.+?) to (.+)$/);
+  const tokens=raw.split(' ').filter(token=>token&&token!=='to'&&token!=='convert'&&token!=='converter');
   let visible=0;
   document.querySelectorAll('.group').forEach(group=>{
    let groupCount=0;
    group.querySelectorAll('.tool').forEach(card=>{
-    const matches=!query||card.dataset.search.replace(/\s+/g,'-').includes(query)||card.dataset.search.includes(search.value.trim().toLowerCase());
+    const haystack=card.dataset.search.replace(/[\s_-]+/g,' ');
+    const matches=directional?
+     directional[1].split(' ').every(token=>card.dataset.sourceSearch.includes(token))&&
+     directional[2].split(' ').every(token=>card.dataset.targetSearch.includes(token)):
+     tokens.every(token=>haystack.includes(token));
     card.hidden=!matches;
     if(matches){visible++;groupCount++}
    });
    group.hidden=groupCount===0;
   });
   document.querySelector('#empty').hidden=visible>0;
- });
+  document.querySelector('#result-count').textContent=
+   'Showing '+visible+' of 19 converter routes';
+ };
+ search?.addEventListener('input',updateSearch);
  </script>
 </body></html>
