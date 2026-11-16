@@ -175,6 +175,8 @@ jobs:
         run: npm run smoke:native-local
       - name: P46 native GDAL independently reads the example point SHP and WGS84 attributes
         run: npm run smoke:demo-native
+      - name: P47 native GDAL validates binary line and polygon-hole examples independently
+        run: npm run smoke:scenario-native
       - name: Preserve native desktop GIS interoperability evidence
         if: always()
         uses: actions/upload-artifact@v4
