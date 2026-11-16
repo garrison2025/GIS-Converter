@@ -124,7 +124,7 @@ try{
   check(await p.locator('#switch-open').getAttribute('href')==='/converter/csv-to-kml/',
    'Switch link points to invalid route');
   check(await p.locator('#file').evaluate(e=>e.files[0]?.name)===original,
-   'Changing target selection discarded the user's chosen local file');
+   'Changing target selection discarded the selected local file');
   check(await p.locator('#result').isHidden(),'Switching route options started a conversion');
   await p.locator('#switch-open').click();
   await p.waitForURL('**/converter/csv-to-kml/');
