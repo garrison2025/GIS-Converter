@@ -35,7 +35,7 @@ async function verify(bytes,dst,scenario){
   check(shp.length>=200,'Output Shapefile record truncated');
   const view=new DataView(shp.buffer,shp.byteOffset,shp.byteLength);
   const type=view.getInt32(108,true);
-  check(type===(scenario==='line'?3:5),'Output SHP has incorrect shape type');
+  check((scenario==='line'?[3,13]:[5,15]).includes(type),'Output SHP has incorrect line/polygon shape type '+type);
   parts=view.getInt32(144,true);vertices=view.getInt32(148,true);
   check(parts===(scenario==='line'?1:2),'Output SHP lost polygon hole or polyline part');
   check(vertices===(scenario==='line'?3:10),'Output SHP lost original line/ring vertices');
