@@ -47,6 +47,8 @@ jobs:
         run: node --check scripts/p45-product-ux-browser.mjs
       - name: P45 verify the 19 converter routes and practical guide completeness without loading GDAL
         run: npm run smoke:route-catalog
+      - name: P46 validate six local demo inputs and byte-level Shapefile correctness
+        run: npm run smoke:demo-unit
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -63,6 +65,8 @@ jobs:
         run: npm run smoke:recovery-browser
       - name: P45 verify complete user discovery, keyboard navigation, mobile layout and repeat GIS downloads
         run: npm run smoke:product-ux
+      - name: P46 independently run all 19 real GIS demo conversions and WebKit touch sample
+        run: npm run smoke:demo-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
@@ -165,6 +169,8 @@ jobs:
         run: npm run build:pages
       - name: Native OGR independently read six browser downloads and generate projected SHP input
         run: npm run smoke:native-local
+      - name: P46 native GDAL independently reads the example point SHP and WGS84 attributes
+        run: npm run smoke:demo-native
       - name: Preserve native desktop GIS interoperability evidence
         if: always()
         uses: actions/upload-artifact@v4

@@ -57,6 +57,9 @@
     "smoke:recovery-browser": "node scripts/p44-gis-recovery-browser.mjs",
     "smoke:route-catalog": "node scripts/p45-route-catalog.mjs",
     "smoke:product-ux": "node scripts/p45-product-ux-browser.mjs",
+    "smoke:demo-unit": "node scripts/p46-demo-inputs-unit.mjs",
+    "smoke:demo-browser": "node scripts/p46-examples-browser.mjs",
+    "smoke:demo-native": "node scripts/p46-native-gdal-example.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
