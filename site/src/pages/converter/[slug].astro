@@ -214,6 +214,12 @@ const scenarios=supportedDemoScenarios(from,to);
   <div class="card"><h2>Input requirements</h2><p>{info.source.help}</p>
    <ul><li>File size: maximum 15 MiB</li><li>Unencrypted files only</li><li>Local browser processing</li></ul>
   </div>
+  {(from==='shp'||to==='shp')&&<div class="card" aria-label="Shapefile DBF attribute compatibility">
+   <h2>Shapefile attribute checks</h2>
+   <p>DBF field names are limited to roughly 10 bytes, not 10 Unicode characters. Long or colliding names can change. Confirm Chinese field names, values and the UTF-8 .cpg in QGIS.</p>
+   <p>Whole-number changes and safely comparable decimal precision changes are now treated as data-loss errors. Nulls, unsupported values, large strings and fields beyond the DBF limits are not automatically certified.</p>
+   <p class="small">Download the inspection JSON. If data loss is detected, the result is withheld. Preserve an original GeoJSON copy for attributes that do not fit the Shapefile format.</p>
+  </div>}
   <div class="card"><h2>Output: {info.target.name}</h2><p>{info.target.features}</p><p><strong>Data note:</strong> {info.caution}</p></div>
  </aside>
  </div>
