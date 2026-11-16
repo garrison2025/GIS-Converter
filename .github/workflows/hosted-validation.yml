@@ -51,6 +51,8 @@ jobs:
         run: npm run smoke:demo-unit
       - name: P47 unit-verify route geometry options and independent SHP Line/Polygon ring records
         run: npm run smoke:scenario-unit
+      - name: P48 block high-magnitude integer/decimal loss and independently inspect UTF-8 DBF fields
+        run: npm run smoke:dbf-precision
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -71,6 +73,8 @@ jobs:
         run: npm run smoke:demo-browser
       - name: P47 run every supported line, GPS track and polygon-hole example through actual GDAL
         run: npm run smoke:scenario-browser
+      - name: P48 verify real GDAL Unicode attributes, numeric precision, CJK names and schema risk
+        run: npm run smoke:attribute-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
