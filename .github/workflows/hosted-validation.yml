@@ -169,6 +169,8 @@ jobs:
         run: npm run build:pages
       - name: Native OGR independently read six browser downloads and generate projected SHP input
         run: npm run smoke:native-local
+      - name: P46 native GDAL independently reads the example point SHP and WGS84 attributes
+        run: npm run smoke:demo-native
       - name: Preserve native desktop GIS interoperability evidence
         if: always()
         uses: actions/upload-artifact@v4
