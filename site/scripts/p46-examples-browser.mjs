@@ -95,7 +95,7 @@ try{
     // ZIP samples dynamically import JSZip; the button click returns before
     // asynchronous archive generation has finished. Await the real file.
     await page.waitForFunction(()=>document.querySelector('#file')?.files.length===1,
-     {timeout:15000});
+     undefined,{timeout:15000});
     check(await page.locator('#file').evaluate(input=>input.files.length)===1,
      'Example was not assigned to native file picker');
     const input=await page.locator('#file').evaluate(input=>({
