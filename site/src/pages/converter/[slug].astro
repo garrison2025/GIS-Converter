@@ -2,6 +2,7 @@
 import {routes,FORMAT_CODES} from '../../lib/converter-routes.mjs';
 import {getRouteNote, formats} from '../../data/content.mjs';
 import {routeGuides} from '../../data/route-guides.mjs';
+import {supportedDemoScenarios,SCENARIO_LABELS} from '../../lib/demo-gis-scenarios.mjs';
 import {getSeoLaunchConfig} from '../../lib/seo-launch-config.mjs';
 export function getStaticPaths(){return routes.map(([slug,from,to])=>({params:{slug},props:{from,to,slug}}));}
 const seo=getSeoLaunchConfig(process.env);
@@ -10,6 +11,7 @@ const info=getRouteNote(slug,from,to);
 const guide=routeGuides[slug];
 const related=routes.filter(([other,source,target])=>other!==slug&&(source===from||target===to)).slice(0,3);
 const label=formats[from].name+' to '+formats[to].name;
+const scenarios=supportedDemoScenarios(from,to);
 ---
 <!doctype html>
 <html lang="en">
@@ -53,6 +55,9 @@ const label=formats[from].name+' to '+formats[to].name;
  .batch-info{font-size:12px;color:#436a76;margin:10px 0 0!important}
  .sample-action{display:flex;gap:11px;align-items:center;flex-wrap:wrap;margin:12px 0 0}
  .sample-action button{background:#fff;color:#08796d;border:1px solid #91bcb5;padding:9px 13px;font-size:13px}
+ .sample-action label{margin:0;min-width:190px;font-size:13px}
+ .sample-action select{font:inherit;color:#173d4b;background:#fff;border:1px solid #a9c8c3;border-radius:8px;padding:8px 10px;max-width:100%;min-height:40px}
+ .sample-action select:focus-visible{outline:3px solid #bde8df;outline-offset:2px}
  .sample-action button:hover{background:#e9f8f2}
  .sample-action button:disabled{opacity:.55;cursor:wait}
  .sample-help{font-size:12px;color:#4e6b77;margin:5px 0 0!important}
@@ -153,9 +158,14 @@ const label=formats[from].name+' to '+formats[to].name;
    <input id="file" name="file" type="file" accept={info.source.accept} aria-describedby="file-info batch-help" multiple required/>
    <p class="small" id="file-info">{info.source.help}</p>
    <div class="sample-action">
+    <label for="sample-scenario">Example geometry
+     <select id="sample-scenario" aria-describedby="sample-help">
+      {scenarios.map(scenario=><option value={scenario}>{SCENARIO_LABELS[scenario]}</option>)}
+     </select>
+    </label>
     <button id="load-sample" type="button" aria-describedby="sample-help">Try a sample {info.source.name} file</button>
    </div>
-   <p class="sample-help" id="sample-help" role="status" aria-live="polite">No GIS file? Load a small synthetic WGS84 point here, then click Convert. Your existing file selection is replaced only if you choose this action. No sample data is uploaded.</p>
+   <p class="sample-help" id="sample-help" role="status" aria-live="polite">Choose a supported synthetic WGS84 example, then click Try a sample and Convert. Your existing file selection is replaced only when you click Try a sample. Lines and polygons are not offered for destinations that cannot preserve them. No file is uploaded.</p>
    <p class="batch-info" id="batch-help"><strong>Free mini-batch:</strong> choose or drop up to 3 files of the same format (15 MiB each, 30 MiB combined). One file downloads normally; multiple files download together as a ZIP with individual quality reports. A failed file stops the entire batch.</p>
    <label class="memory-option" for="memory-save"><input type="checkbox" id="memory-save" aria-describedby="memory-help"/> Use memory-saving mode</label>
    <p class="memory-help" id="memory-help">Skips the optional map preview, while keeping the converted file and its independent quality checks. Batches are limited to 12 MiB input and 24 MiB output. Automatically suggested on browsers reporting 2 GiB RAM or less. This is not a measurement of free memory.</p>
@@ -257,6 +267,7 @@ const previewPanel=document.querySelector('#preview-panel');
 const memoryOption=document.querySelector('#memory-save');
 const recoveryPanel=document.querySelector('#recovery-panel');
 const sampleButton=document.querySelector('#load-sample');
+const scenarioSelect=document.querySelector('#sample-scenario');
 const sampleHelp=document.querySelector('#sample-help');
 const sampleDefault=sampleHelp.textContent;
 memoryOption.checked=suggestedMemorySavingMode(navigator.deviceMemory);
@@ -343,16 +354,20 @@ sampleButton.addEventListener('click',async()=>{
   // from a private filename. The synthetic file is created in memory.
   const tuple=routes.find(route=>route[0]===form.dataset.slug);
   if(!tuple)throw Error('Unknown conversion route');
-  const {makeDemoGISFile}=await import('../../lib/demo-gis-files.mjs');
-  const synthetic=await makeDemoGISFile(tuple[1]);
+  const {makeScenarioGISFile,supportedDemoScenarios,SCENARIO_LABELS}=
+   await import('../../lib/demo-gis-scenarios.mjs');
+  const scenario=scenarioSelect.value;
+  if(!supportedDemoScenarios(tuple[1],tuple[2]).includes(scenario))
+   throw Error('Unsupported demonstration scenario on this route');
+  const synthetic=await makeScenarioGISFile(tuple[1],scenario);
   const dt=new DataTransfer();
   dt.items.add(synthetic);
   file.files=dt.files;
   file.dispatchEvent(new Event('change',{bubbles:true}));
   sampleHelp.textContent='Synthetic '+tuple[1].toUpperCase()+
    ' example loaded ('+(synthetic.size/1024).toFixed(1)+
-   ' KiB, one WGS84 point). Click Convert to '+tuple[2].toUpperCase()+
-   ' to run the real browser GIS engine.';
+   ' KiB, '+SCENARIO_LABELS[scenario]+'). Click Convert to '+tuple[2].toUpperCase()+
+   ' to run the real browser GIS engine. Check the downloaded geometry and quality report.';
   sampleHelp.dataset.status='loaded';
   status.textContent='Example loaded locally. Click Convert to run the real GIS conversion.';
   file.focus({preventScroll:true});
@@ -425,7 +440,7 @@ form?.addEventListener('submit',async(event)=>{
  const inputs=Array.from(file.files);
  const issue=selectionError(inputs);
  if(issue){showSelectionError(issue);return;}
- btn.disabled=true;file.disabled=true;memoryOption.disabled=true;sampleButton.disabled=true;cancelButton.hidden=false;
+ btn.disabled=true;file.disabled=true;memoryOption.disabled=true;sampleButton.disabled=true;scenarioSelect.disabled=true;cancelButton.hidden=false;
  form.setAttribute('aria-busy','true');
  status.textContent='Starting browser-local conversion…';
  let operation;
@@ -547,7 +562,7 @@ form?.addEventListener('submit',async(event)=>{
   }
  }finally{
   if(!operation||activeTask===operation){
-   activeTask=null;btn.disabled=false;file.disabled=false;memoryOption.disabled=false;sampleButton.disabled=false;
+   activeTask=null;btn.disabled=false;file.disabled=false;memoryOption.disabled=false;sampleButton.disabled=false;scenarioSelect.disabled=false;
    cancelButton.hidden=true;form.removeAttribute('aria-busy');
   }
  }
