@@ -44,7 +44,7 @@ function kmlBody(scenario){
  return '<Polygon><outerBoundaryIs><LinearRing><coordinates>'+
   OUTER.map(p=>p.join(',')).join(' ')+'</coordinates></LinearRing></outerBoundaryIs>'+
   '<innerBoundaryIs><LinearRing><coordinates>'+
-  HOLE.map(p=>p.join(',')+',0').join(' ')+'</coordinates></LinearRing></innerBoundaryIs></Polygon>';
+  HOLE.map(p=>p.join(',')).join(' ')+'</coordinates></LinearRing></innerBoundaryIs></Polygon>';
 }
 function kml(scenario){
  return '<?xml version="1.0" encoding="UTF-8"?>'+
