@@ -60,6 +60,9 @@
     "smoke:demo-unit": "node scripts/p46-demo-inputs-unit.mjs",
     "smoke:demo-browser": "node scripts/p46-examples-browser.mjs",
     "smoke:demo-native": "node scripts/p46-native-gdal-example.mjs",
+    "smoke:scenario-unit": "node scripts/p47-demo-scenarios-unit.mjs",
+    "smoke:scenario-browser": "node scripts/p47-scenarios-browser.mjs",
+    "smoke:scenario-native": "node scripts/p47-native-scenarios.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
