@@ -42,7 +42,7 @@ function kmlBody(scenario){
  if(scenario==='line')return '<LineString><tessellate>1</tessellate><coordinates>'+
   LINE.map(p=>p.join(',')).join(' ')+'</coordinates></LineString>';
  return '<Polygon><outerBoundaryIs><LinearRing><coordinates>'+
-  OUTER.map(p=>p.join(',')+',0').join(' ')+'</coordinates></LinearRing></outerBoundaryIs>'+
+  OUTER.map(p=>p.join(',')).join(' ')+'</coordinates></LinearRing></outerBoundaryIs>'+
   '<innerBoundaryIs><LinearRing><coordinates>'+
   HOLE.map(p=>p.join(',')+',0').join(' ')+'</coordinates></LinearRing></innerBoundaryIs></Polygon>';
 }
