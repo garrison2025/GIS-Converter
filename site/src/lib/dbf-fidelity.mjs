@@ -10,7 +10,15 @@ const MAX_GEOJSON_BYTES=15*1024*1024;
 const MAX_DBF_BYTES=24*1024*1024;
 const MAX_ROWS=20000;
 const MAX_FIELDS=128;
-const safeName=name=>/^[A-Za-z_][A-Za-z0-9_]{0,9}$/.test(name);
+// DBF field names are limited by *bytes*, not JavaScript characters.
+ // With a verified UTF-8 .cpg, a short Chinese or accented field can be
+ // compared safely just like an ASCII field. Names that exceed the 10-byte
+ // DBF limit or normalize ambiguously are explicitly not certified.
+export function comparableDbfFieldName(name){
+ return typeof name==='string'&&name===name.normalize('NFC')&&
+   /^[\p{L}_][\p{L}\p{N}_]*$/u.test(name)&&
+   new TextEncoder().encode(name).length<=10;
+}
 const fail=message=>{throw new Error(message)};
 const status=(state,reason)=>({status:state,detail:reason});
 const textDecoder=new TextDecoder('utf-8',{fatal:true});
@@ -29,7 +37,9 @@ function parseDbf(bytes){
  for(let i=0;i<numberFields;i++){
   const base=32+i*32;
   const raw=bytes.subarray(base,base+11),nul=raw.indexOf(0);
-  const name=ascii(nul<0?raw:raw.subarray(0,nul)).trim();
+  const name=textDecoder.decode(nul<0?raw:raw.subarray(0,nul));
+  // Defective/non-UTF8 field descriptors must not be silently mapped.
+  if(name!==name.normalize('NFC'))fail('Non-normalized DBF UTF-8 field name');
   const type=String.fromCharCode(bytes[base+11]);
   const width=bytes[base+16],decimal=bytes[base+17];
   if(!name||!width||decimal>width||position+width>recordLength)
@@ -107,7 +117,7 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
   if(dbf.count!==rows)return status('review','DBF record count differs from source GeoJSON: '+rows+' input → '+dbf.count+' output.');
   let compared=0,unavailable=0,mismatches=0,eligibleFields=0;
   for(const [name,present] of keys){
-   if(!safeName(name)||present!==rows){unavailable+=rows;continue}
+   if(!comparableDbfFieldName(name)||present!==rows){unavailable+=rows;continue}
    const field=dbf.lookup.get(name);
    const values=input.features.map(feature=>feature.properties[name]);
    const comparable=values.map(value=>{
@@ -137,8 +147,11 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
     }else{
      // Bound to 1e-10 absolute, 1e-12 relative. A greater difference on
      // a finite source number is a detectable precision change.
-     const tolerance=Math.max(1e-10,Math.abs(source.value)*1e-12);
-     if(Math.abs(source.value-target.value)>tolerance)mismatches++;
+     // A safe integer changed by one is ALWAYS loss, even when its
+     // magnitude is trillions. Likewise the comparable finite decimal
+     // representation must round-trip as the same JavaScript Number; an
+     // arbitrary relative tolerance could quietly approve whole-unit loss.
+     if(source.value!==target.value)mismatches++;
     }
    }
   }
