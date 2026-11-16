@@ -336,6 +336,8 @@ file.addEventListener('change',()=>{
 sampleButton.addEventListener('click',async()=>{
  if(activeTask||file.disabled||sampleButton.disabled)return;
  sampleButton.disabled=true;
+ sampleHelp.textContent='Preparing the synthetic example locally…';
+ sampleHelp.dataset.status='loading';
  try{
   // Resolve only the route's known source format, never an inferred source
   // from a private filename. The synthetic file is created in memory.
