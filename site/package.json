@@ -63,6 +63,7 @@
     "smoke:scenario-unit": "node scripts/p47-demo-scenarios-unit.mjs",
     "smoke:scenario-browser": "node scripts/p47-scenarios-browser.mjs",
     "smoke:scenario-native": "node scripts/p47-native-scenarios.mjs",
+    "smoke:dbf-precision": "node scripts/p48-dbf-precision-unit.mjs",
     "smoke:preview-local": "node scripts/p35-preview-local.mjs",
     "smoke:preview-live": "node scripts/p35-preview-browser-qa.mjs"
   },
