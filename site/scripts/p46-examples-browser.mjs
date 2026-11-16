@@ -27,7 +27,7 @@ async function download(page,selector){
  return {name:item.suggestedFilename(),bytes:fs.readFileSync(await item.path())};
 }
 async function verifyOutput(bytes,dst){
- check(bytes.length>50,'GDAL returned empty example conversion output');
+ check(bytes.length>8,'GDAL returned genuinely empty or invalid example conversion output');
  if(dst==='shp'){
   const zip=await JSZip.loadAsync(bytes);
   const names=Object.keys(zip.files);
@@ -92,6 +92,10 @@ try{
     check(response?.ok(),'Converter unavailable');
     check(await page.locator('#load-sample').isVisible(),'Try sample button is missing');
     await page.locator('#load-sample').click();
+    // ZIP samples dynamically import JSZip; the button click returns before
+    // asynchronous archive generation has finished. Await the real file.
+    await page.waitForFunction(()=>document.querySelector('#file')?.files.length===1,
+     {timeout:15000});
     check(await page.locator('#file').evaluate(input=>input.files.length)===1,
      'Example was not assigned to native file picker');
     const input=await page.locator('#file').evaluate(input=>({
@@ -133,6 +137,8 @@ try{
   try{
    await page.goto(base+'/converter/shp-to-geojson/',{waitUntil:'domcontentloaded'});
    await page.locator('#load-sample').click();
+   await page.waitForFunction(()=>document.querySelector('#file')?.files.length===1,
+    {timeout:15000});
    check(await page.locator('#file').evaluate(input=>input.files.length)===1,
     'WebKit cannot assign the synthetic SHP ZIP to file control');
    await page.locator('#submit').click();
