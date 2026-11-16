@@ -1,0 +1,54 @@
+name: GIS Converter P46 examples public acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p46-examples-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p46-public-examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 42
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact P46 Cloudflare Pages merged main SHA
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install locked frontend, Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Validate six synthetic GIS files including full SHP DBF PRJ byte structure
+        run: npm run smoke:demo-unit
+      - name: Confirm exact 19-route public release and engineering noindex
+        run: npm run smoke:live-release
+      - name: Real WASM on every route with generated synthetic example and WebKit touch
+        run: npm run smoke:demo-browser
+      - name: Validate all 19 ordinary GIS upload/download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Recheck 19 independent converted geometry previews and quality reports
+        run: npm run smoke:preview-live
+      - name: Preserve synthetic demo browser, SHA and route evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p46-public-six-format-samples-19-routes
+          path: |
+            site/p46-examples-public-results.json
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# Examples stay browser-local; no remote uploads, payment activation or SEO changes.
