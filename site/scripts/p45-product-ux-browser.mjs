@@ -81,7 +81,7 @@ try{
    'Default quick-link not valid');
   await p.locator('#quick-from').selectOption('csv');
   check(await p.locator('#quick-to').inputValue()==='kml','Unsupported CSV→SHP was not corrected');
-  check(await p.locator('#quick-to option[value="shp"]').isDisabled(),
+  check(await p.locator('#quick-to option[value="shp"]').evaluate(option=>option.disabled===true),
    'CSV→Shapefile should not be advertised');
   check(await p.locator('#quick-open').getAttribute('href')==='/converter/csv-to-kml/',
    'Valid CSV→KML route not selected');
