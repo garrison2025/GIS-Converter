@@ -47,6 +47,8 @@ jobs:
         run: node --check scripts/p45-product-ux-browser.mjs
       - name: P45 verify the 19 converter routes and practical guide completeness without loading GDAL
         run: npm run smoke:route-catalog
+      - name: P46 validate six local demo inputs and byte-level Shapefile correctness
+        run: npm run smoke:demo-unit
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
