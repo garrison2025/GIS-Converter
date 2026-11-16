@@ -17,7 +17,7 @@ try{
  await page.addInitScript(() => {const Original=window.Worker;window.__workerCreated=0;window.Worker=class extends Original{constructor(...args){super(...args);window.__workerCreated++}}});
  page.on('pageerror',e=>report.pageErrors.push(String(e)));
  await page.goto(root+'/');
- report.pages=await page.locator('a[href^="/converter/"]').count();
+ report.pages=await page.locator('a.tool[href^="/converter/"]').count();
  if(report.pages!==19)throw Error('Expected 19 tool links, found '+report.pages);
 
  const search=page.locator('#filter');
