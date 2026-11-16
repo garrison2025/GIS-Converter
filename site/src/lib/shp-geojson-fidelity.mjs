@@ -1,4 +1,4 @@
-import {readUtf8ShapefileDbf,readComparableDbfValue} from './dbf-fidelity.mjs';
+import {readUtf8ShapefileDbf,readComparableDbfValue,comparableDbfFieldName} from './dbf-fidelity.mjs';
 
 /**
  * P23: bounded independent source DBF -> emitted GeoJSON field comparison.
@@ -7,7 +7,6 @@ import {readUtf8ShapefileDbf,readComparableDbfValue} from './dbf-fidelity.mjs';
  */
 const MAX_GEOJSON_OUTPUT=24*1024*1024;
 const MAX_ROWS=20000;
-const SAFE_FIELD=/^[A-Za-z_][A-Za-z0-9_]{0,9}$/;
 const result=(status,detail)=>({status,detail});
 const comparableNumber=n=>Number.isFinite(n)&&
   ((Number.isInteger(n)&&Number.isSafeInteger(n))||
@@ -27,7 +26,7 @@ export async function inspectShpToGeojsonDbfFidelity(shpZipBytes,geojsonBytes){
      dbf.count+' input → '+data.features.length+' output. Source values and field names are not included.');
   let compared=0,unsupported=0,mismatches=0,eligibleFields=0;
   for(const field of dbf.fields){
-   if(!SAFE_FIELD.test(field.name)||!['C','N','F'].includes(field.type)){
+   if(!comparableDbfFieldName(field.name)||!['C','N','F'].includes(field.type)){
     unsupported+=dbf.count;
     continue;
    }
@@ -57,9 +56,11 @@ export async function inspectShpToGeojsonDbfFidelity(shpZipBytes,geojsonBytes){
     if(source.kind==='text'){
      if(typeof output!=='string'||output!==source.value)mismatches++;
     }else{
-     const tolerance=Math.max(1e-10,Math.abs(source.value)*1e-12);
+     // Explicitly compare all safely representable numbers, including
+     // high-magnitude integers. A relative threshold once permitted
+     // silently changing integer values by one or more units.
      if(typeof output!=='number'||!Number.isFinite(output)||
-       Math.abs(source.value-output)>tolerance)mismatches++;
+       source.value!==output)mismatches++;
     }
    }
   }
