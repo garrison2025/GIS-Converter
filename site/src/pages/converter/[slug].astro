@@ -401,6 +401,8 @@ document.querySelector('#convert-again').addEventListener('click',()=>{
  resetOutput();
  file.value='';
  selected.textContent=placeholder;
+ sampleHelp.textContent=sampleDefault;
+ delete sampleHelp.dataset.status;
  error.hidden=true;
  error.textContent='';
  status.textContent='Choose another '+(form.dataset.slug.split('-to-')[0]||'GIS')+
