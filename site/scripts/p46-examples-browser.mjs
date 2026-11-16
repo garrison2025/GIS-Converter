@@ -138,7 +138,7 @@ try{
    await page.goto(base+'/converter/shp-to-geojson/',{waitUntil:'domcontentloaded'});
    await page.locator('#load-sample').click();
    await page.waitForFunction(()=>document.querySelector('#file')?.files.length===1,
-    {timeout:15000});
+    undefined,{timeout:15000});
    check(await page.locator('#file').evaluate(input=>input.files.length)===1,
     'WebKit cannot assign the synthetic SHP ZIP to file control');
    await page.locator('#submit').click();
