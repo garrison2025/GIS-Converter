@@ -51,6 +51,12 @@ const label=formats[from].name+' to '+formats[to].name;
  .uploadzone{border:1.5px dashed #9fc8c0;background:#f5fcfa;padding:18px 20px;border-radius:12px;margin:20px 0 15px;transition:border-color .15s,background .15s}
  .uploadzone[data-dragging="true"]{border-color:#08796d;background:#e1f6f0}
  .batch-info{font-size:12px;color:#436a76;margin:10px 0 0!important}
+ .sample-action{display:flex;gap:11px;align-items:center;flex-wrap:wrap;margin:12px 0 0}
+ .sample-action button{background:#fff;color:#08796d;border:1px solid #91bcb5;padding:9px 13px;font-size:13px}
+ .sample-action button:hover{background:#e9f8f2}
+ .sample-action button:disabled{opacity:.55;cursor:wait}
+ .sample-help{font-size:12px;color:#4e6b77;margin:5px 0 0!important}
+ .sample-help[data-status="loaded"]{font-weight:750;color:#116d57}
  .uploadzone label.memory-option{display:flex;gap:9px;align-items:flex-start;margin:12px 0 0;font-size:13px;color:#294e5d}
  .memory-option input{flex:none;width:18px;height:18px;margin-top:3px;accent-color:#08796d}
  .memory-help{font-size:12px;color:#54707c;margin:5px 0 0!important}
@@ -146,6 +152,10 @@ const label=formats[from].name+' to '+formats[to].name;
    <label for="file">Choose {info.source.name} input file(s)</label>
    <input id="file" name="file" type="file" accept={info.source.accept} aria-describedby="file-info batch-help" multiple required/>
    <p class="small" id="file-info">{info.source.help}</p>
+   <div class="sample-action">
+    <button id="load-sample" type="button" aria-describedby="sample-help">Try a sample {info.source.name} file</button>
+   </div>
+   <p class="sample-help" id="sample-help" role="status" aria-live="polite">No GIS file? Load a small synthetic WGS84 point here, then click Convert. Your existing file selection is replaced only if you choose this action. No sample data is uploaded.</p>
    <p class="batch-info" id="batch-help"><strong>Free mini-batch:</strong> choose or drop up to 3 files of the same format (15 MiB each, 30 MiB combined). One file downloads normally; multiple files download together as a ZIP with individual quality reports. A failed file stops the entire batch.</p>
    <label class="memory-option" for="memory-save"><input type="checkbox" id="memory-save" aria-describedby="memory-help"/> Use memory-saving mode</label>
    <p class="memory-help" id="memory-help">Skips the optional map preview, while keeping the converted file and its independent quality checks. Batches are limited to 12 MiB input and 24 MiB output. Automatically suggested on browsers reporting 2 GiB RAM or less. This is not a measurement of free memory.</p>
@@ -246,6 +256,9 @@ const selected=document.querySelector('#file-info');
 const previewPanel=document.querySelector('#preview-panel');
 const memoryOption=document.querySelector('#memory-save');
 const recoveryPanel=document.querySelector('#recovery-panel');
+const sampleButton=document.querySelector('#load-sample');
+const sampleHelp=document.querySelector('#sample-help');
+const sampleDefault=sampleHelp.textContent;
 memoryOption.checked=suggestedMemorySavingMode(navigator.deviceMemory);
 const placeholder=selected.textContent;
 let linkUrl=null,reportUrl=null,activeTask=null;
@@ -303,6 +316,8 @@ memoryOption.addEventListener('change',()=>{
  if(issue)showSelectionError(issue);
 });
 file.addEventListener('change',()=>{
+ sampleHelp.textContent=sampleDefault;
+ delete sampleHelp.dataset.status;
  resetOutput();
  error.hidden=true;error.textContent='';
  status.textContent='Ready to convert.';
@@ -317,6 +332,31 @@ file.addEventListener('change',()=>{
  }
  const issue=selectionError(inputs);
  if(issue)showSelectionError(issue);
+});
+sampleButton.addEventListener('click',async()=>{
+ if(activeTask||file.disabled||sampleButton.disabled)return;
+ sampleButton.disabled=true;
+ try{
+  // Resolve only the route's known source format, never an inferred source
+  // from a private filename. The synthetic file is created in memory.
+  const tuple=routes.find(route=>route[0]===form.dataset.slug);
+  if(!tuple)throw Error('Unknown conversion route');
+  const {makeDemoGISFile}=await import('../../lib/demo-gis-files.mjs');
+  const synthetic=await makeDemoGISFile(tuple[1]);
+  const dt=new DataTransfer();
+  dt.items.add(synthetic);
+  file.files=dt.files;
+  file.dispatchEvent(new Event('change',{bubbles:true}));
+  sampleHelp.textContent='Synthetic '+tuple[1].toUpperCase()+
+   ' example loaded ('+(synthetic.size/1024).toFixed(1)+
+   ' KiB, one WGS84 point). Click Convert to '+tuple[2].toUpperCase()+
+   ' to run the real browser GIS engine.';
+  sampleHelp.dataset.status='loaded';
+  status.textContent='Example loaded locally. Click Convert to run the real GIS conversion.';
+  file.focus({preventScroll:true});
+ }catch{
+  showSelectionError('The example could not be loaded in this browser. Choose your own compatible file.');
+ }finally{sampleButton.disabled=false}
 });
 // The native file picker is keyboard accessible. Drag/drop is an additional
 // convenience; dropping files never triggers an automatic conversion.
@@ -381,7 +421,7 @@ form?.addEventListener('submit',async(event)=>{
  const inputs=Array.from(file.files);
  const issue=selectionError(inputs);
  if(issue){showSelectionError(issue);return;}
- btn.disabled=true;file.disabled=true;memoryOption.disabled=true;cancelButton.hidden=false;
+ btn.disabled=true;file.disabled=true;memoryOption.disabled=true;sampleButton.disabled=true;cancelButton.hidden=false;
  form.setAttribute('aria-busy','true');
  status.textContent='Starting browser-local conversion…';
  let operation;
@@ -503,7 +543,7 @@ form?.addEventListener('submit',async(event)=>{
   }
  }finally{
   if(!operation||activeTask===operation){
-   activeTask=null;btn.disabled=false;file.disabled=false;memoryOption.disabled=false;
+   activeTask=null;btn.disabled=false;file.disabled=false;memoryOption.disabled=false;sampleButton.disabled=false;
    cancelButton.hidden=true;form.removeAttribute('aria-busy');
   }
  }
