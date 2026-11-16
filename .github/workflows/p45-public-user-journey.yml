@@ -1,0 +1,54 @@
+name: GIS Converter P45 product UX public acceptance (read-only)
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p45-product-ux-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p45-public-user-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 38
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact P45 merged main release on Cloudflare Pages
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install locked site and real browser runtimes
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Check single lightweight 19-route catalog and complete content
+        run: npm run smoke:route-catalog
+      - name: Validate exact live release, 19 routes and engineering noindex
+        run: npm run smoke:live-release
+      - name: P45 verify seven real public user journeys and actual repeated download
+        run: npm run smoke:product-ux
+      - name: Recheck all 19 actual GIS file upload/download routes
+        run: node scripts/live-all-routes.mjs
+      - name: Recheck 19 real converted GIS previews and independent quality reports
+        run: npm run smoke:preview-live
+      - name: Preserve exact deployment and sanitized journey results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p45-public-journey-and-converter-evidence
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p45-product-ux-live.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# Engineering preview only: no remote file upload, SEO activation or payment.
