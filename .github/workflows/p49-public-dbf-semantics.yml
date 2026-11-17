@@ -1,0 +1,56 @@
+name: GIS Converter P49 DBF type and null public acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p49-dbf-semantics-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p49-public-type-integrity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 42
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Wait for exact P49 merged SHA on Cloudflare
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install pinned dependencies and actual browser engines
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Recheck P48 numeric and Unicode integrity baseline
+        run: npm run smoke:dbf-precision
+      - name: Validate P49 dates logical booleans blank null and casefold collision
+        run: npm run smoke:dbf-semantics
+      - name: Confirm 19 public routes and engineering-preview noindex
+        run: npm run smoke:live-release
+      - name: Run four true browser GDAL/WASM P49 conversion outcomes
+        run: npm run smoke:semantics-browser
+      - name: Recheck 19 public upload and download conversion routes
+        run: node scripts/live-all-routes.mjs
+      - name: Recheck 19 actual output previews and quality reports
+        run: npm run smoke:preview-live
+      - name: Save sanitized public P49 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p49-public-dbf-semantics
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p49-attribute-browser-public.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# No user file backend upload, payment activation or SEO indexing.
