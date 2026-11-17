@@ -26,7 +26,8 @@ export async function inspectShpToGeojsonDbfFidelity(shpZipBytes,geojsonBytes){
      dbf.count+' input → '+data.features.length+' output. Source values and field names are not included.');
   let compared=0,unsupported=0,mismatches=0,eligibleFields=0;
   for(const field of dbf.fields){
-   if(!comparableDbfFieldName(field.name)||!['C','N','F'].includes(field.type)){
+   if(!comparableDbfFieldName(field.name)||!['C','N','F','D','L'].includes(field.type)||
+      dbf.ambiguousLowerNames.has(field.name.toLowerCase())){
     unsupported+=dbf.count;
     continue;
    }
@@ -38,7 +39,7 @@ export async function inspectShpToGeojsonDbfFidelity(shpZipBytes,geojsonBytes){
     if(source.kind==='unsupported'||source.kind==='invalid'||source.kind==='null'||
        (source.kind==='number'&&!comparableNumber(source.value))||
        (source.kind==='text'&&source.value==='')){
-     // DBF null/blank and precision beyond safe JS numbers are not certified.
+     // DBF null/blank, invalid dates/logicals and unsafe precision are not certified.
      unsupported++;
      continue;
     }
@@ -53,8 +54,11 @@ export async function inspectShpToGeojsonDbfFidelity(shpZipBytes,geojsonBytes){
      continue;
     }
     const output=props[field.name];
-    if(source.kind==='text'){
+    if(source.kind==='text'||source.kind==='date'){
      if(typeof output!=='string'||output!==source.value)mismatches++;
+    }else if(source.kind==='boolean'){
+     // Do not treat GDAL's 0/1 integer as the original DBF logical type.
+     if(typeof output!=='boolean'||output!==source.value)mismatches++;
     }else{
      // Explicitly compare all safely representable numbers, including
      // high-magnitude integers. A relative threshold once permitted

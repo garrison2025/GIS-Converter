@@ -23,6 +23,15 @@ const fail=message=>{throw new Error(message)};
 const status=(state,reason)=>({status:state,detail:reason});
 const textDecoder=new TextDecoder('utf-8',{fatal:true});
 const ascii=bytes=>String.fromCharCode(...bytes);
+// Gregorian calendar dates only; DBF 'D' stores YYYYMMDD with no time zone.
+export function comparableIsoDate(value){
+ if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;
+ const [year,month,day]=value.split('-').map(Number);
+ if(year<1||month<1||month>12||day<1)return false;
+ const days=[31,((year%4===0&&year%100!==0)||year%400===0)?29:28,
+  31,30,31,30,31,31,30,31,30,31];
+ return day<=days[month-1];
+}
 function parseDbf(bytes){
  if(!(bytes instanceof Uint8Array)||bytes.length<33||bytes.length>MAX_DBF_BYTES)fail('DBF length outside inspection limits');
  const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
@@ -48,20 +57,39 @@ function parseDbf(bytes){
   position+=width;
  }
  if(position!==recordLength)fail('DBF record width does not match field descriptors');
- const lookup=new Map();
+ const lookup=new Map(),folded=new Set(),ambiguousLowerNames=new Set();
  for(const field of fields){
   if(lookup.has(field.name))fail('DBF has duplicate field names');
+  const lower=field.name.toLowerCase();
+  if(folded.has(lower))ambiguousLowerNames.add(lower);
+  folded.add(lower);
   lookup.set(field.name,field);
  }
  for(let row=0;row<count;row++){
   if(bytes[headerLength+row*recordLength]!==0x20)fail('DBF deleted or nonstandard record');
  }
- return {bytes,count,headerLength,recordLength,fields,lookup};
+ return {bytes,count,headerLength,recordLength,fields,lookup,ambiguousLowerNames};
 }
 export function readComparableDbfValue(dbf,row,field){
  const start=dbf.headerLength+row*dbf.recordLength+field.offset;
  const bytes=dbf.bytes.subarray(start,start+field.width);
  if(field.type==='C')return {kind:'text',value:textDecoder.decode(bytes).replace(/ +$/g,'')};
+ if(field.type==='D'){
+  if(field.width!==8)return {kind:'invalid',value:null};
+  const raw=ascii(bytes);
+  if(!raw.trim()||raw==='00000000')return {kind:'null',value:null};
+  if(!/^\d{8}$/.test(raw))return {kind:'invalid',value:null};
+  const iso=raw.slice(0,4)+'-'+raw.slice(4,6)+'-'+raw.slice(6,8);
+  return comparableIsoDate(iso)?{kind:'date',value:iso}:{kind:'invalid',value:null};
+ }
+ if(field.type==='L'){
+  if(field.width!==1)return {kind:'invalid',value:null};
+  const raw=ascii(bytes).toUpperCase();
+  if(raw==='T'||raw==='Y')return {kind:'boolean',value:true};
+  if(raw==='F'||raw==='N')return {kind:'boolean',value:false};
+  if(raw==='?'||raw===' ')return {kind:'null',value:null};
+  return {kind:'invalid',value:null};
+ }
  if(field.type==='N'||field.type==='F'){
   const raw=ascii(bytes).trim();
   if(!raw||raw==='?' )return {kind:'null',value:null};
@@ -121,7 +149,10 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
    const field=dbf.lookup.get(name);
    const values=input.features.map(feature=>feature.properties[name]);
    const comparable=values.map(value=>{
-    if(typeof value==='string')return {kind:'text',value};
+    // A blank DBF character slot is ambiguous between empty and NULL.
+    // Never certify the source empty string as faithfully represented.
+    if(typeof value==='string'&&value.length>0)return {kind:'text',value};
+    if(typeof value==='boolean')return {kind:'boolean',value};
     if(typeof value==='number'&&Number.isFinite(value)&&Number.isSafeInteger(value))return {kind:'number',value};
     if(typeof value==='number'&&Number.isFinite(value)&&!Number.isInteger(value)&&Number(value.toPrecision(15))===value)
      return {kind:'number',value};
@@ -131,11 +162,20 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
    unavailable+=rows-n;
    if(!n)continue;
    if(!field){mismatches+=n;continue}
+   // Case-only DBF names may alias in desktop GIS software.
+   // Even matching raw bytes are not proof of usable distinct fields.
+   if(dbf.ambiguousLowerNames.has(name.toLowerCase())){
+    unavailable+=n;continue;
+   }
    eligibleFields++;
-   if(!['C','N','F'].includes(field.type)){unavailable+=n;continue}
+   if(!['C','N','F','D','L'].includes(field.type)){unavailable+=n;continue}
    for(let row=0;row<rows;row++){
-    const source=comparable[row];
+    let source=comparable[row];
     if(!source)continue;
+    // Date-only DBF fields can preserve a valid ISO date string exactly.
+    // Unparseable dates are mismatches, never silently coerced.
+    if(field.type==='D'&&source.kind==='text'&&comparableIsoDate(source.value))
+     source={kind:'date',value:source.value};
     compared++;
     let target;
     try{target=readComparableDbfValue(dbf,row,field)}
@@ -150,7 +190,7 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
     }
     if(target.kind==='unsupported'){unavailable++;compared--;continue}
     if(source.kind!==target.kind){mismatches++;continue}
-    if(source.kind==='text'){
+    if(source.kind==='text'||source.kind==='date'||source.kind==='boolean'){
      if(source.value!==target.value)mismatches++;
     }else{
      // Already comparable finite numbers must match exactly as JS Numbers.
