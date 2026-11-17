@@ -38,7 +38,7 @@ function walkCoords(data,box){
  */
 function scanGeojsonFieldRisk(features){
  const names=new Set(), limit=512;
- let nestedValues=0, nullValues=0, oversizedStrings=0, highPrecisionNumbers=0, unsafeIntegers=0, overflow=false;
+ let nestedValues=0, nullValues=0, emptyStrings=0, booleans=0, oversizedStrings=0, highPrecisionNumbers=0, unsafeIntegers=0, overflow=false;
  for(const f of features){
   const props=f?.properties;
   if(!props || typeof props!=='object' || Array.isArray(props))continue;
@@ -47,6 +47,8 @@ function scanGeojsonFieldRisk(features){
    else if(!names.has(name))overflow=true;
    if(value!==null && typeof value==='object')nestedValues++;
    if(value===null)nullValues++;
+   if(value==='')emptyStrings++;
+   if(typeof value==='boolean')booleans++;
    if(typeof value==='string' && new TextEncoder().encode(value).length>254)oversizedStrings++;
    if(typeof value==='number'){
      if(Number.isInteger(value)&&!Number.isSafeInteger(value))unsafeIntegers++;
@@ -55,16 +57,19 @@ function scanGeojsonFieldRisk(features){
   }
  }
  const encoder=new TextEncoder();
- const prefixes=new Set();
- let longNames=0,collisions=0;
+ const prefixes=new Set(),lowerNames=new Set();
+ let longNames=0,collisions=0,caseInsensitiveCollisions=0;
  for(const name of names){
   const bytes=encoder.encode(name);
   if(bytes.length>10)longNames++;
   const prefix=Array.from(bytes.slice(0,10)).join(',');
   if(prefixes.has(prefix))collisions++;else prefixes.add(prefix);
+  const lower=name.toLowerCase();
+  if(lowerNames.has(lower))caseInsensitiveCollisions++;else lowerNames.add(lower);
  }
  return {fieldNamesInspected:names.size,longNames,firstTenByteCollisions:collisions,
-   nonScalarValues:nestedValues,nullValues,oversizedStrings,highPrecisionNumbers,unsafeIntegers,schemaScanLimited:overflow};
+   caseInsensitiveCollisions,nonScalarValues:nestedValues,nullValues,emptyStrings,booleans,
+   oversizedStrings,highPrecisionNumbers,unsafeIntegers,schemaScanLimited:overflow};
 }
 
 function parseGeojson(bytes){
@@ -327,11 +332,12 @@ export async function createGISQualityReport(input,source,output,target){
  else add('input-inspection',before.complete?'pass':'unavailable',before.complete?'Input structure inspected for supported feature types':'Input inspection was incomplete');
  if(source==='geojson'&&target==='shp'&&before.fieldRisk){
   const r=before.fieldRisk;
-  const flagged=r.longNames||r.firstTenByteCollisions||r.nonScalarValues||r.schemaScanLimited;
+  const flagged=r.longNames||r.firstTenByteCollisions||r.caseInsensitiveCollisions||r.nonScalarValues||r.schemaScanLimited;
   add('shp-field-limits',flagged?'review':'pass',
     flagged
       ? 'Shapefile DBF schema risk: '+r.longNames+' field names exceed 10 UTF-8 bytes, '+
-        r.firstTenByteCollisions+' duplicate 10-byte prefixes, '+r.nonScalarValues+
+        r.firstTenByteCollisions+' duplicate 10-byte prefixes, '+r.caseInsensitiveCollisions+
+        ' case-insensitive name collisions, '+r.nonScalarValues+
         ' nested/list values'+(r.schemaScanLimited?'; field scan limited':'')+
         '. Shortening, renaming or coercion can occur. Confirm fields in GIS software.'
       : 'No field-name length, 10-byte prefix collision or non-scalar type risk found in inspected input; field values are not certified.'
@@ -339,9 +345,10 @@ export async function createGISQualityReport(input,source,output,target){
  }
  if(source==='geojson'&&target==='shp'&&before.fieldRisk){
    const r=before.fieldRisk;
-   const flagged=r.nullValues||r.oversizedStrings||r.highPrecisionNumbers||r.unsafeIntegers||r.schemaScanLimited;
+   const flagged=r.nullValues||r.emptyStrings||r.booleans||r.oversizedStrings||r.highPrecisionNumbers||r.unsafeIntegers||r.schemaScanLimited;
    add('shp-value-limits',flagged?'review':'pass',
-     'DBF value compatibility risk: '+r.nullValues+' explicit nulls, '+r.oversizedStrings+
+     'DBF value compatibility risk: '+r.nullValues+' explicit nulls, '+r.emptyStrings+
+     ' ambiguous empty strings, '+r.booleans+' boolean values (no native Shapefile Boolean field), '+r.oversizedStrings+
      ' UTF-8 strings longer than 254 bytes, '+r.highPrecisionNumbers+
      ' high-precision numbers, '+r.unsafeIntegers+' unsafe integer values'+
      (r.schemaScanLimited?'; schema scan bounded':'')+
