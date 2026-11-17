@@ -40,9 +40,11 @@ function dbf(records,fields){
  out[out.length-1]=0x1a;
  return out;
 }
-async function zipDbf(values,fields,encoding='UTF-8'){
+async function zipDbf(values,fields,encoding='UTF-8',mutateDbf=null){
  const archive=new JSZip();
- archive.file('layer.dbf',dbf([values],fields));
+ const bytes=dbf([values],fields);
+ mutateDbf?.(bytes);
+ archive.file('layer.dbf',bytes);
  archive.file('layer.cpg',encoding);
  // Minimal binary ZIP sidecars for DBF-only comparable value tests.
  archive.file('layer.shp',new Uint8Array([0]));
@@ -100,6 +102,23 @@ const unknownEncoding=await inspectGeojsonToShpDbfFidelity(sameJson,
  await zipDbf(original,FIELDS,'CP1252'));
 assert.equal(unknownEncoding.status,'unavailable',
  'Declared legacy encoding is not independently comparable as UTF-8');
+// A generated DBF that claims UTF-8 but contains an invalid byte
+// sequence in a known comparable text field has definite data loss.
+// Previously readComparableDbfValue threw and the forward inspector
+// downgraded the corrupt value to "unavailable", bypassing DATA_LOSS.
+const malformedUtf8Archive=await zipDbf(original,FIELDS,'UTF-8',bytes=>{
+ const firstValue=33+32*FIELDS.length+1; // first record, first C field
+ bytes[firstValue]=0xc3;bytes[firstValue+1]=0x28; // invalid UTF-8 continuation
+});
+const malformedForward=await inspectGeojsonToShpDbfFidelity(sameJson,malformedUtf8Archive);
+assert.equal(malformedForward.status,'review',
+ 'Invalid UTF-8 in emitted DBF text must be treated as confirmed data corruption');
+assert.throws(()=>assertNoDetectedCriticalDataLoss({
+ checks:[{id:'dbf-attribute-values',...malformedForward}]
+}),{code:'DATA_LOSS'});
+const malformedReverse=await inspectShpToGeojsonDbfFidelity(malformedUtf8Archive,sameJson);
+assert.equal(malformedReverse.status,'unavailable',
+ 'Malformed source UTF-8 cannot be certified or guessed in reverse');
 const nullable={...original,Code:null};
 const partial=await inspectGeojsonToShpDbfFidelity(json(nullable),
  await zipDbf(nullable,FIELDS));
@@ -120,4 +139,4 @@ assert.throws(()=>assertNoDetectedCriticalDataLoss(confirmed),{code:'DATA_LOSS'}
 const confirmedReverse={checks:[{id:'shp-geojson-attributes',...await inspectShpToGeojsonDbfFidelity(
  exactArchive,json(floatLost))}]};
 assert.throws(()=>assertNoDetectedCriticalDataLoss(confirmedReverse),{code:'DATA_LOSS'});
-console.log('P48_DBF_PRECISION PASSED: 4 exact UTF-8 fields, CJK/accents, 1-unit 3e12 drift, 1e-12 decimal drift, renamed fields, 2-way independent comparison, null/unverifiable encoding and critical DATA_LOSS block');
+console.log('P48_DBF_PRECISION PASSED: UTF-8 CJK/accents, trillion integer and decimal drift, confirmed malformed output text blocking, ambiguous malformed source not certified, nulls and strict DATA_LOSS gate');

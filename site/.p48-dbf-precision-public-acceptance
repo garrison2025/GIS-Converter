@@ -1,1 +1,1 @@
-P48 exact main public Cloudflare SHA acceptance: strict Unicode DBF field and integer/decimal, 4 true browser scenarios, 19 GIS real routes, 19 previews; noindex.
+P48 follow-up public Cloudflare SHA acceptance: malformed UTF-8 in generated DBF text now triggers DATA_LOSS, reverse uncertain source stays unavailable; exact numeric/CJK and 19 routes, noindex.

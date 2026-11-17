@@ -139,18 +139,22 @@ export async function inspectGeojsonToShpDbfFidelity(inputBytes,shpZipBytes) {
     compared++;
     let target;
     try{target=readComparableDbfValue(dbf,row,field)}
-    catch{unavailable++;compared--;continue}
+    catch{
+     // For a known, comparable source string, a declared UTF-8 DBF 'C'
+     // value containing invalid UTF-8 bytes is confirmed corruption.
+     // Do not downgrade a detectable output encoding failure to
+     // 'unavailable': that would bypass the critical DATA_LOSS gate.
+     if(field.type==='C'&&source.kind==='text')mismatches++;
+     else{unavailable++;compared--}
+     continue;
+    }
     if(target.kind==='unsupported'){unavailable++;compared--;continue}
     if(source.kind!==target.kind){mismatches++;continue}
     if(source.kind==='text'){
      if(source.value!==target.value)mismatches++;
     }else{
-     // Bound to 1e-10 absolute, 1e-12 relative. A greater difference on
-     // a finite source number is a detectable precision change.
-     // A safe integer changed by one is ALWAYS loss, even when its
-     // magnitude is trillions. Likewise the comparable finite decimal
-     // representation must round-trip as the same JavaScript Number; an
-     // arbitrary relative tolerance could quietly approve whole-unit loss.
+     // Already comparable finite numbers must match exactly as JS Numbers.
+     // In particular, safe trillion-scale integers cannot lose one unit.
      if(source.value!==target.value)mismatches++;
     }
    }

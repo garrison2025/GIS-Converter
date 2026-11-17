@@ -71,6 +71,27 @@ paths, private attribute names, values or source coordinates.
   On merge, a one-shot **exact main SHA** Cloudflare workflow tests
   the actual public browser output and existing routes.
 
+## P48 follow-up — malformed UTF-8 output text
+
+A further code-path audit found that an independently comparable source
+string could become invalid UTF-8 bytes in a generated DBF `C` field
+while the value reader threw and the forward inspector counted it only
+as `unavailable`. This was an avoidable blind spot in the existing
+critical output withholding rule.
+
+For **GeoJSON → Shapefile**, when a field name, source text and UTF-8
+declaration have already been verified, decoding failure in its emitted
+character bytes is now a **confirmed mismatch** (`review`), and the
+existing `DATA_LOSS` gate withholds the output. Reverse **Shapefile →
+GeoJSON** with malformed *source* bytes remains `unavailable`, since the
+original text cannot be reconstructed or certified. Exact numeric, null,
+long-name, 19-route and engineering-preview behavior remain unchanged.
+
+The synthetic DBF regression mutates a real UTF-8 character value to
+invalid bytes, explicitly proves forward `review` plus `DATA_LOSS`,
+and separately proves reverse source decoding remains `unavailable`.
+The P48 exact-SHA public workflow is rerun on the resulting main merge.
+
 ## Deployment limits
 
 The site stays an **engineering preview**, client-side/free, with
