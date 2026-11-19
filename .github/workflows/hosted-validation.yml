@@ -55,6 +55,8 @@ jobs:
         run: npm run smoke:dbf-precision
       - name: P49 validate DBF calendar dates logical values blank/null and field collisions
         run: npm run smoke:dbf-semantics
+      - name: P50 validate CSV KML KMZ GeoJSON independent attribute comparison and critical loss
+        run: npm run smoke:cross-attributes
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -79,6 +81,8 @@ jobs:
         run: npm run smoke:attribute-browser
       - name: P49 run real GDAL browser attribute type null and collision cases
         run: npm run smoke:semantics-browser
+      - name: P50 run six real GDAL browser cross-format named-field and lexical identifier scenarios
+        run: npm run smoke:cross-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
