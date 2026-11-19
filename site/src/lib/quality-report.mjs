@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import {inspectShpToGeojsonDbfFidelity} from './shp-geojson-fidelity.mjs';
+import {inspectCrossFormatAttributeFidelity} from './cross-format-attribute-fidelity.mjs';
 import {inspectGeojsonToShpDbfFidelity} from './dbf-fidelity.mjs';
 import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
 import {inspectGpxTimedKml} from './gpx-timed-track.mjs';
@@ -362,6 +363,15 @@ export async function createGISQualityReport(input,source,output,target){
   const fidelity=await inspectShpToGeojsonDbfFidelity(inputBytes,output);
   add('shp-geojson-attributes',fidelity.status,fidelity.detail);
  }
+ // P50: compare named point attributes independently from actual bytes;
+ // ambiguous schemas/coordinate correspondence never receive false passes.
+ const attributeFormats=new Set(['csv','kml','kmz','geojson']);
+ if(source!==target&&attributeFormats.has(source)&&attributeFormats.has(target)){
+  const result=before.pointOnly&&after.pointOnly&&before.crs==='WGS84'&&after.crs==='WGS84'?
+   await inspectCrossFormatAttributeFidelity(inputBytes,source,output,target):
+   {status:'unavailable',detail:'Point attribute comparison needs WGS84 Point features and unambiguous row pairing.'};
+  add('cross-format-attributes',result.status,result.detail);
+ }
  add('attribute-fidelity','unavailable','Field types, names, values, styles and metadata are not independently verified');
  const status=checks.some(c=>c.status==='review')?'review':checks.some(c=>c.status==='unavailable')?'partial':'checked';
  return {schemaVersion:1,kind:'local-structural-quality-report',status,source,target,input:before,output:after,checks,disclaimer:'Automated structural comparison only; NOT data certification. Complex geometries, attributes, projections and rendering require independent GIS review.'};
@@ -373,7 +383,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
