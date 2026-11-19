@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   astro-and-gdal:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
@@ -161,7 +161,7 @@ jobs:
           if-no-files-found: warn
   native-ogr-desktop:
     name: P33 independent native GDAL/OGR desktop-reader compatibility
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 24
     defaults:
       run:
@@ -201,7 +201,7 @@ jobs:
           if-no-files-found: warn
   seo-activation-dry-run:
     name: P30 isolated custom-domain SEO build rehearsal (never deployed)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     defaults:
       run:
@@ -238,7 +238,7 @@ jobs:
             site/dist/release.json
           if-no-files-found: warn
   billing-ledger-offline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
