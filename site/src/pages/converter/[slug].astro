@@ -220,6 +220,11 @@ const scenarios=supportedDemoScenarios(from,to);
    <p>Exact comparable numbers and date-only values are checked for changes. Shapefile does not natively preserve GeoJSON Boolean fields; a confirmed type change is blocked. DBF blank text and NULL can be ambiguous, and case-only field names may collide in GIS software.</p>
    <p class="small">Download the inspection JSON. If data loss is detected, the result is withheld. Preserve an original GeoJSON copy for attributes that do not fit the Shapefile format.</p>
   </div>}
+  {(['csv','kml','kmz','geojson'].includes(from)&&['csv','kml','kmz','geojson'].includes(to))&&<div class="card" aria-label="Cross-format attribute fidelity">
+   <h2>Cross-format attribute checks</h2>
+   <p>For uniquely matchable WGS84 Point records, the quality report independently compares named attributes from the original file with the actual converted output. Confirmed loss can block a download.</p>
+   <p>Keep CSV identifiers with leading zeros, KML ExtendedData and multilingual text intact. Empty/null values, inferred numeric types, duplicate coordinates and ambiguous or complex data cannot be certified automatically.</p>
+  </div>}
   <div class="card"><h2>Output: {info.target.name}</h2><p>{info.target.features}</p><p><strong>Data note:</strong> {info.caution}</p></div>
  </aside>
  </div>

@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   astro-and-gdal:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
@@ -55,6 +55,8 @@ jobs:
         run: npm run smoke:dbf-precision
       - name: P49 validate DBF calendar dates logical values blank/null and field collisions
         run: npm run smoke:dbf-semantics
+      - name: P50 validate CSV KML KMZ GeoJSON independent attribute comparison and critical loss
+        run: npm run smoke:cross-attributes
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -79,6 +81,8 @@ jobs:
         run: npm run smoke:attribute-browser
       - name: P49 run real GDAL browser attribute type null and collision cases
         run: npm run smoke:semantics-browser
+      - name: P50 run six real GDAL browser cross-format named-field and lexical identifier scenarios
+        run: npm run smoke:cross-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures
@@ -157,7 +161,7 @@ jobs:
           if-no-files-found: warn
   native-ogr-desktop:
     name: P33 independent native GDAL/OGR desktop-reader compatibility
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 24
     defaults:
       run:
@@ -197,7 +201,7 @@ jobs:
           if-no-files-found: warn
   seo-activation-dry-run:
     name: P30 isolated custom-domain SEO build rehearsal (never deployed)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     defaults:
       run:
@@ -234,7 +238,7 @@ jobs:
             site/dist/release.json
           if-no-files-found: warn
   billing-ledger-offline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
