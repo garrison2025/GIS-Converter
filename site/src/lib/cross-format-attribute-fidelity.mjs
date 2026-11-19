@@ -116,14 +116,16 @@ function csv(input){
 function xmlText(raw){
  if(raw.includes('<'))reject();
  const entities={amp:'&',lt:'<',gt:'>',quot:'"',apos:"'"};
- let result=raw.replace(/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g,(_all,key)=>{
+ const encoded=/&(#x[0-9a-fA-F]+|#[0-9]+|amp|lt|gt|quot|apos);/g;
+ const rest=raw.replace(encoded,'');
+ if(rest.includes('&'))reject();
+ const result=raw.replace(encoded,(_all,key)=>{
   if(key[0]!=='#')return entities[key];
   const cp=key[1].toLowerCase()==='x'?
     Number.parseInt(key.slice(2),16):Number.parseInt(key.slice(1),10);
   if(!Number.isInteger(cp)||cp===0||cp>0x10ffff||(cp>=0xd800&&cp<=0xdfff))reject();
   return String.fromCodePoint(cp);
  });
- if(result.includes('&')&&/&(?:#|[a-zA-Z])/.test(result))reject();
  return result;
 }
 function attr(tag,key){
