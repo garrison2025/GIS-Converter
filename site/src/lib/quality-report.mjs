@@ -503,6 +503,12 @@ export async function inspectGISData(format,bytes){
 export async function createGISQualityReport(input,source,output,target){
  const inputBytes=new Uint8Array(await input.arrayBuffer());
  const [before,after]=await Promise.all([inspectGISData(source,inputBytes),inspectGISData(target,output)]);
+ // P40/P49/P51 independent readback helpers are single-Shapefile-layer
+ // readers. The new P59 aggregate counts and structural checks cover ALL
+ // layers, but do not present a partial geometry/attribute comparison as
+ // a cross-format certification for a multi-layer archive.
+ const multiShp=(source==='shp'&&before.shpLayers>1)||
+   (target==='shp'&&after.shpLayers>1);
  const checks=[];
  function add(id,status,detail){checks.push({id,status,detail})}
  if(after.issues.length)add('output-structure','review','Output: '+after.issues.join('; '));
@@ -596,9 +602,11 @@ export async function createGISQualityReport(input,source,output,target){
  // Mixed, unsupported, ambiguous or projected GIS files are NOT certified.
  if(new Set(['geojson','kml','kmz','shp']).has(source)&&
     new Set(['geojson','kml','kmz','shp']).has(target)&&source!==target){
-  const fidelity=before.crs==='WGS84'&&after.crs==='WGS84'?
-   await inspectComplexGeometryFidelity(inputBytes,source,output,target):
-   {status:'unavailable',detail:'Complex WGS84 geometry comparison requires confirmed geographic CRS on both sides.'};
+  const fidelity=multiShp?
+   {status:'unavailable',detail:'Multi-layer Shapefile cross-format vertex comparison has not been independently certified.'}:
+   before.crs==='WGS84'&&after.crs==='WGS84'?
+    await inspectComplexGeometryFidelity(inputBytes,source,output,target):
+    {status:'unavailable',detail:'Complex WGS84 geometry comparison requires confirmed geographic CRS on both sides.'};
   add('complex-geometry-values',fidelity.status,fidelity.detail);
  }
  // P51: join line/polygon attributes to their unique fully matching
@@ -609,7 +617,7 @@ export async function createGISQualityReport(input,source,output,target){
   // Skip extra ZIP/SHP/coordinate parsing entirely for large stress inputs.
   // P40's original 4,000-feature geometry gate remains unchanged.
   const insideJoinCap=count=>count===null||(Number.isInteger(count)&&count>0&&count<=300);
-  const result=!before.pointOnly&&!after.pointOnly&&
+  const result=!multiShp&&!before.pointOnly&&!after.pointOnly&&
     insideJoinCap(before.features)&&insideJoinCap(after.features)&&
     before.crs==='WGS84'&&after.crs==='WGS84'?
    await inspectComplexFeatureAttributeFidelity(inputBytes,source,output,target):
@@ -647,11 +655,15 @@ export async function createGISQualityReport(input,source,output,target){
      '. These are risk indicators, not evidence of loss or preservation.');
  }
  if(source==='geojson'&&target==='shp'){
-  const fidelity=await inspectGeojsonToShpDbfFidelity(inputBytes,output);
+  const fidelity=multiShp?
+   {status:'unavailable',detail:'Multi-layer Shapefile DBF values require independent per-layer field association.'}:
+   await inspectGeojsonToShpDbfFidelity(inputBytes,output);
   add('dbf-attribute-values',fidelity.status,fidelity.detail);
  }
  if(source==='shp'&&target==='geojson'){
-  const fidelity=await inspectShpToGeojsonDbfFidelity(inputBytes,output);
+  const fidelity=multiShp?
+   {status:'unavailable',detail:'Multi-layer Shapefile-to-GeoJSON fields require independent per-layer association.'}:
+   await inspectShpToGeojsonDbfFidelity(inputBytes,output);
   add('shp-geojson-attributes',fidelity.status,fidelity.detail);
  }
  // P50: compare named point attributes independently from actual bytes;
