@@ -42,5 +42,8 @@ for(const command of [
  'npm run smoke:ci-policy','npm run smoke:cross-attributes',
  'npm run smoke:complex-attributes','npm run smoke:complex-attr-browser'
 ])assert(p52.includes('run: '+command),'P52 public acceptance omits '+command);
+const p43=fs.readFileSync('scripts/p43-mobile-resilience.mjs','utf8');
+assert(p43.includes("await browser.close();\n browser=null;\n await run('webkit_touch_mobile_manual_low_memory_download'"),
+ 'Release Chromium process before independently measuring WebKit mobile low-memory conversion');
 assert(!p52.includes('wrangler pages deploy'),'Acceptance must not deploy or activate SEO');
 console.log('P52_CI_POLICY PASSED: latest dev push wins, main never auto-canceled, cached browsers version-pinned, three engines and all 19 public routes/previews preserved');
