@@ -18,7 +18,9 @@ on:
       - site/src/lib/kml-extended-data-repair.mjs
       - site/src/lib/gdal-matrix.mjs
       - site/src/lib/quality-report.mjs
+      - site/src/lib/shp-xy-bounds.mjs
       - site/scripts/quality-report-smoke.mjs
+      - site/scripts/p57-shp-xy-bounds-unit.mjs
       - site/scripts/p53-kml-extended-repair-unit.mjs
       - site/.p53-qgis-release-public-acceptance
       - .github/workflows/p53-qgis-release-acceptance.yml
@@ -73,6 +75,8 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: P56 fail closed on SHX record-offset, length and DBF corruption
         run: npm run smoke:quality-report
+      - name: P57 verify real SHP/SHX and multipart record XY bounds
+        run: node scripts/p57-shp-xy-bounds-unit.mjs
       - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
         run: npm run smoke:kml-extended-repair
       - name: Cache Playwright 1.57 three-browser binaries
