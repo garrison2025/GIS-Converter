@@ -111,6 +111,55 @@ for(const scenario of ['line','polygon']){
   'Corrupt oversized part count must not bypass vertex bounds');
  tests++;
 }
+// Review regression: a structurally plausible 1,000,001-vertex record must
+// not stop validation of a later corrupt record. The first record alone is
+// (correctly) unavailable under the scan budget; both records must be review.
+{
+ const n=1_000_001, firstSize=48+16*n, secondSize=64;
+ const secondAt=100+8+firstSize;
+ const shp=new Uint8Array(secondAt+8+secondSize),shx=new Uint8Array(116);
+ const s=new DataView(shp.buffer),x=new DataView(shx.buffer);
+ for(const [v,bytes] of [[s,shp.length],[x,shx.length]]){
+  v.setUint32(0,9994,false);v.setUint32(24,bytes/2,false);
+  v.setUint32(28,1000,true);v.setInt32(32,3,true);
+ }
+ s.setUint32(100,1,false);s.setUint32(104,firstSize/2,false);
+ s.setInt32(108,3,true);s.setInt32(144,1,true);
+ s.setInt32(148,n,true);s.setInt32(152,0,true);
+ x.setUint32(100,50,false);x.setUint32(104,firstSize/2,false);
+ s.setUint32(secondAt,2,false);s.setUint32(secondAt+4,secondSize/2,false);
+ s.setInt32(secondAt+8,3,true);s.setInt32(secondAt+44,1,true);
+ s.setInt32(secondAt+48,999999,true);s.setInt32(secondAt+52,0,true);
+ x.setUint32(108,secondAt/2,false);x.setUint32(112,secondSize/2,false);
+ const oneShp=shp.slice(0,secondAt),oneShx=shx.slice(0,108);
+ new DataView(oneShp.buffer).setUint32(24,oneShp.length/2,false);
+ new DataView(oneShx.buffer).setUint32(24,oneShx.length/2,false);
+ assert.equal(check(oneShp,oneShx),'unavailable',
+  'Structurally plausible oversized single line is not falsely certified');
+ assert.equal(check(shp,shx),'review',
+  'Malformed second record must not bypass XY checks after scan cap');
+ const dbf=new Uint8Array(35);
+ dbf[0]=3;const d=new DataView(dbf.buffer);
+ d.setUint32(4,2,true);d.setUint16(8,33,true);
+ d.setUint16(10,1,true);dbf[32]=0x0d;dbf[33]=32;dbf[34]=32;
+ const zip=new JSZip();
+ for(const [ext,bytes] of [['shp',shp],['shx',shx],['dbf',dbf]])
+  zip.file('budget-test.'+ext,bytes);
+ zip.file('budget-test.prj','GEOGCS["WGS 84", DATUM["WGS_1984"]]');
+ const archive=new Uint8Array(await zip.generateAsync({
+  type:'uint8array',compression:'DEFLATE'
+ }));
+ const point={type:'Feature',properties:{},
+  geometry:{type:'Point',coordinates:[116.4,39.9]}};
+ const input=JSON.stringify({type:'FeatureCollection',features:[point,point]});
+ const report=await createGISQualityReport(
+  new File([input],'source.geojson'),'geojson',archive,'shp');
+ assert.equal(report.checks.find(c=>c.id==='feature-count')?.status,'pass');
+ assert.equal(report.checks.find(c=>c.id==='shp-record-integrity')?.status,'pass');
+ assert.equal(report.checks.find(c=>c.id==='shp-xy-bounds')?.status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+ tests++;
+}
 // End-to-end: even when SHX count, DBF rows and index offsets agree,
 // corrupt XY bytes in an otherwise valid output must trigger DATA_LOSS.
 {
