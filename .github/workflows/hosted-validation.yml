@@ -24,6 +24,8 @@ jobs:
           node-version: 22.23.4
       - name: Install audited lockfile deterministically with npm ci
         run: npm ci --no-audit --no-fund
+      - name: P52 enforce safe CI concurrency and full browser/public acceptance coverage
+        run: npm run smoke:ci-policy
       - name: Independently test bounded GIS structural quality report
         run: npm run smoke:quality-report
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
