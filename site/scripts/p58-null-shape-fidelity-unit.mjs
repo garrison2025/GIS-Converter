@@ -207,7 +207,9 @@ for(const geometry of [
 for(const fake of [
  '<description><![CDATA[<Point><coordinates>116.5,40</coordinates></Point>]]></description>',
  '<!-- <Point><coordinates>116.5,40</coordinates></Point> -->',
- '<description><Point><coordinates>116.5,40</coordinates></Point></description>'
+ '<description><Point><coordinates>116.5,40</coordinates></Point></description>',
+ '<Point/><description><coordinates>116.5,40</coordinates></description>',
+ '<Point/><ExtendedData><fake:coordinates>116.5,40</fake:coordinates></ExtendedData>'
 ]){
  const good=([x,y])=>'<Placemark><Point><coordinates>'+
   x+','+y+'</coordinates></Point></Placemark>';
