@@ -197,19 +197,36 @@ function provenDirectKmlPoint(markup){
  if(/<!--|<!\[CDATA\[|<!DOCTYPE|<!ENTITY/i.test(markup))return false;
  const tokens=[...markup.matchAll(/<\s*(\/?)\s*([A-Za-z_][\w.:-]*)\b([^<>]*?)>/g)];
  const stack=[];
- let direct=0;
+ let direct=0,locatedCoordinates=0,coordinatesStart=-1;
  for(const token of tokens){
   const name=token[2].split(':').at(-1).toLowerCase();
   const closing=token[1]==='/';
   const tail=token[3];
   if(closing){
-   if(stack.pop()!==name)return false;
+   if(stack.at(-1)!==name)return false;
+   // Not enough for a Placemark to contain a <Point>: the validated
+   // coordinates must be an actual direct child of THAT Point, rather than
+   // an unrelated <description> or <ExtendedData> payload elsewhere.
+   if(name==='coordinates'&&stack.length===2&&stack[0]==='point'){
+    if(coordinatesStart<0)return false;
+    const contents=markup.slice(coordinatesStart,token.index).trim();
+    const locations=contents.split(/\s+/).filter(Boolean);
+    if(locations.length!==1)return false;
+    const xyz=locations[0].split(',');
+    if(xyz.length<2||xyz.length>3||!pointFromText(xyz[0],xyz[1])||
+       (xyz.length===3&&!strictDecimal.test(xyz[2].trim())))
+      return false;
+    locatedCoordinates++;
+   }
+   stack.pop();
   }else{
    if(name==='point'&&stack.length===0)direct++;
+   if(name==='coordinates'&&stack.length===1&&stack[0]==='point')
+    coordinatesStart=token.index+token[0].length;
    if(!/\/\s*$/.test(tail))stack.push(name);
   }
  }
- return stack.length===0&&direct===1;
+ return stack.length===0&&direct===1&&locatedCoordinates===1;
 }
 function parseKml(bytes,format='kml'){
  let str;
