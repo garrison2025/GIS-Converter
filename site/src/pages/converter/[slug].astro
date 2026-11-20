@@ -225,6 +225,11 @@ const scenarios=supportedDemoScenarios(from,to);
    <p>For uniquely matchable WGS84 Point records, the quality report independently compares named attributes from the original file with the actual converted output. Confirmed loss can block a download.</p>
    <p>Keep CSV identifiers with leading zeros, KML ExtendedData and multilingual text intact. Empty/null values, inferred numeric types, duplicate coordinates and ambiguous or complex data cannot be certified automatically.</p>
   </div>}
+  {(['geojson','kml','kmz','shp'].includes(from)&&['geojson','kml','kmz','shp'].includes(to))&&<div class="card" aria-label="Complex geometry attribute association">
+   <h2>Line and polygon field association</h2>
+   <p>For uniquely distinguishable WGS84 lines, polygons and multipart geometries, the local quality report now matches the full geometry before comparing the fields attached to each feature.</p>
+   <p>Swapped or missing comparable values can block output. Identical geometries, unsupported field types, very large feature sets and unverifiable CRS remain warnings, not lossless certifications.</p>
+  </div>}
   <div class="card"><h2>Output: {info.target.name}</h2><p>{info.target.features}</p><p><strong>Data note:</strong> {info.caution}</p></div>
  </aside>
  </div>
