@@ -151,7 +151,7 @@ async function shapefile(bytes,state){
  const zip=await JSZip.loadAsync(bytes);
  const files=Object.keys(zip.files).filter(n=>!zip.files[n].dir);
  if(files.length>48)invalid('Too many SHP archive entries for independent inspection');
- const related=/\\.(?:shp|shx|dbf|prj|cpg)$/i,components=new Map();
+ const related=/\.(?:shp|shx|dbf|prj|cpg)$/i,components=new Map();
  for(const name of files){
   if(!related.test(name))continue;
   const key=name.toLowerCase();
@@ -163,7 +163,7 @@ async function shapefile(bytes,state){
  if(!stems.length||stems.length>8)invalid('SHP layer count outside independent inspection bounds');
  const known=new Set(stems);
  for(const key of components.keys()){
-  const stem=key.replace(/\\.(?:shp|shx|dbf|prj|cpg)$/,'');
+  const stem=key.replace(/\.(?:shp|shx|dbf|prj|cpg)$/,'');
   if(!known.has(stem))invalid('Orphan Shapefile sidecar');
  }
  let inflated=0;
@@ -183,8 +183,8 @@ async function shapefile(bytes,state){
    shpFile.async('uint8array'),shxFile.async('uint8array'),
    dbfFile.async('uint8array'),prjFile.async('string')
   ]);
-  if(/PROJCS\\s*\\[|PROJCRS\\s*\\[|PROJECTEDCRS\\s*\\[/i.test(projection)||
-    !/WGS[\\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(projection))
+  if(/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(projection)||
+    !/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(projection))
    invalid('SHP layer is not confirmed WGS84');
   if(raw.length<100||index.length<100||raw.length%2||index.length%2||
     (index.length-100)%8)invalid('Invalid SHP/SHX header or index alignment');
