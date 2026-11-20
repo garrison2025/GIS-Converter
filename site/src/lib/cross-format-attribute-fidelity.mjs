@@ -215,7 +215,7 @@ function safeNumber(n){
  return typeof n==='number'&&Number.isFinite(n)&&
   (Number.isSafeInteger(n)||(!Number.isInteger(n)&&Number(n.toPrecision(15))===n));
 }
-function compare(source,target){
+export function compareComparableAttributeValues(source,target){
  if(source.kind==='unsupported'||source.kind==='null')return 'unavailable';
  if(source.kind==='text'&&!source.value)return 'unavailable';
  if(source.kind==='number'&&!safeNumber(source.value))return 'unavailable';
@@ -260,7 +260,7 @@ export async function inspectCrossFormatAttributeFidelity(inputBytes,sourceForma
      }
      mismatches++;continue;
     }
-    const status=compare(value,target.fields.get(name));
+    const status=compareComparableAttributeValues(value,target.fields.get(name));
     if(status==='pass')compared++;
     else if(status==='review')mismatches++;
     else uncertain++;

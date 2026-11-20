@@ -57,6 +57,8 @@ jobs:
         run: npm run smoke:dbf-semantics
       - name: P50 validate CSV KML KMZ GeoJSON independent attribute comparison and critical loss
         run: npm run smoke:cross-attributes
+      - name: P51 verify complex GIS geometry-linked attributes including swapped lines polygons and SHP DBF
+        run: npm run smoke:complex-attributes
       - name: Stage real GDAL/WASM and record SHA256 and sizes
         run: npm run stage:gdal
       - name: Gzip oversized GDAL asset and measure actual compressed file
@@ -83,6 +85,8 @@ jobs:
         run: npm run smoke:semantics-browser
       - name: P50 run six real GDAL browser cross-format named-field and lexical identifier scenarios
         run: npm run smoke:cross-browser
+      - name: P51 browser-check nine real GDAL complex line polygon and SHP attribute associations
+        run: npm run smoke:complex-attr-browser
       - name: Recheck known real GDAL KML to GeoJSON
         run: npm run smoke:browser
       - name: Run all 19 real GDAL route fixtures

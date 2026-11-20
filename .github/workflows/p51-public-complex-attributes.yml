@@ -1,0 +1,56 @@
+name: GIS Converter P51 complex feature attribute public acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - site/.p51-complex-attributes-public-acceptance
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  p51-public-feature-attributes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: site
+    env:
+      GIS_BASE_URL: https://gis-converter.pages.dev
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Confirm Cloudflare serves the exact merged P51 main SHA
+        run: node scripts/p35-await-live-release.mjs
+      - name: Install lockfile and real Chromium Firefox WebKit
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium firefox webkit
+      - name: Recheck P50 named point attributes and exact mismatch blocking
+        run: npm run smoke:cross-attributes
+      - name: Recheck P51 unique complex geometry field pairing and swapped DBF rows
+        run: npm run smoke:complex-attributes
+      - name: Verify public 19-route release, noindex and build SHA
+        run: npm run smoke:live-release
+      - name: P51 nine true browser GDAL geometry-linked attribute conversions
+        run: npm run smoke:complex-attr-browser
+      - name: Recheck 19 real public GIS upload/download conversion routes
+        run: node scripts/live-all-routes.mjs
+      - name: Recheck all 19 public output previews and quality reports
+        run: npm run smoke:preview-live
+      - name: Save sanitized complex GIS attribute acceptance artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p51-complex-attribute-public
+          path: |
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/p51-complex-attribute-browser-public.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# Engineering preview only. No user uploads to backend, payments or SEO indexing.

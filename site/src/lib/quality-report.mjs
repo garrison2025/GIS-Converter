@@ -6,6 +6,7 @@ import {inspectGpxLineFidelity} from './gpx-fidelity.mjs';
 import {inspectGpxTimedKml} from './gpx-timed-track.mjs';
 import {inspectPointCoordinateFidelity} from './point-coordinate-fidelity.mjs';
 import {inspectComplexGeometryFidelity} from './complex-geometry-fidelity.mjs';
+import {inspectComplexFeatureAttributeFidelity} from './complex-feature-attribute-fidelity.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -325,6 +326,21 @@ export async function createGISQualityReport(input,source,output,target){
    {status:'unavailable',detail:'Complex WGS84 geometry comparison requires confirmed geographic CRS on both sides.'};
   add('complex-geometry-values',fidelity.status,fidelity.detail);
  }
+ // P51: join line/polygon attributes to their unique fully matching
+ // WGS84 geometry, not their input/output feature order. Known swapped
+ // fields are DATA_LOSS; duplicate geometry leaves association unavailable.
+ const complexAttributeFormats=new Set(['geojson','kml','kmz','shp']);
+ if(source!==target&&complexAttributeFormats.has(source)&&complexAttributeFormats.has(target)){
+  // Skip extra ZIP/SHP/coordinate parsing entirely for large stress inputs.
+  // P40's original 4,000-feature geometry gate remains unchanged.
+  const insideJoinCap=count=>count===null||(Number.isInteger(count)&&count>0&&count<=300);
+  const result=!before.pointOnly&&!after.pointOnly&&
+    insideJoinCap(before.features)&&insideJoinCap(after.features)&&
+    before.crs==='WGS84'&&after.crs==='WGS84'?
+   await inspectComplexFeatureAttributeFidelity(inputBytes,source,output,target):
+   {status:'unavailable',detail:'Complex attribute checking requires uniquely matchable WGS84 line/polygon geometry.'};
+  add('complex-feature-attributes',result.status,result.detail);
+ }
  if(before.pointOnly&&after.pointOnly&&before.bbox&&after.bbox&&before.crs==='WGS84'&&after.crs==='WGS84'){
   const matches=before.bbox.every((x,i)=>eq(x,after.bbox[i]));
   add('coordinate-bounds',matches?'pass':'review',matches?'Point longitude/latitude bounds agree':'Coordinates differ: input '+before.bbox.join(', ')+'; output '+after.bbox.join(', '));
@@ -383,7 +399,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');

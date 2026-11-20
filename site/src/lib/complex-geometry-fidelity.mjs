@@ -363,6 +363,48 @@ async function read(bytes,format){
  if(format==='kml')return kml(text,state);
  invalid('Unsupported P40 format');
 }
+/**
+ * P51: provide *only* uniquely matched source/output record indices for
+ * independent attribute inspection. Exact geometry equality is required;
+ * bboxes alone never pair two features. Do not serialize any geometry from
+ * this internal function into the downloadable quality report.
+ *
+ * Deliberately capped below P40's 4,000-feature geometry-only stress budget:
+ * pairing complex attributes in highly repeated geometries is not certifiable.
+ */
+export async function pairComplexFeatureRows(sourceBytes,sourceFormat,outputBytes,targetFormat){
+ if(!allowed.has(sourceFormat)||!allowed.has(targetFormat)||sourceFormat===targetFormat)
+  return null;
+ try{
+  const [before,after]=await Promise.all([
+   read(sourceBytes,sourceFormat),read(outputBytes,targetFormat)
+  ]);
+  if(!before.length||before.length!==after.length||before.length>300)return null;
+  const buckets=new Map(),outputBounds=after.map(normBBox);
+  after.forEach((feature,i)=>{
+   const box=outputBounds[i];
+   const k=bboxKey(feature.type,bboxCell(box[0]),bboxCell(box[1]));
+   if(!buckets.has(k))buckets.set(k,[]);
+   buckets.get(k).push(i);
+  });
+  const used=new Set(),pairs=[];
+  for(let i=0;i<before.length;i++){
+   const source=before[i],box=normBBox(source),x=bboxCell(box[0]),y=bboxCell(box[1]);
+   const matches=[];
+   for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+    for(const j of buckets.get(bboxKey(source.type,x+dx,y+dy))||[]){
+     if(approxBbox(box,outputBounds[j])&&geometrySame(source,after[j]))matches.push(j);
+    }
+   }
+   // Duplicated geometries are ambiguous even if their feature count is equal.
+   // Never let a greedy pairing declare one output attribute "the right one".
+   if(matches.length!==1||used.has(matches[0]))return null;
+   const j=matches[0];used.add(j);pairs.push([i,j]);
+  }
+  return used.size===after.length?{pairs,records:before.length}:null;
+ }catch{return null}
+}
+
 export async function inspectComplexGeometryFidelity(sourceBytes,sourceFormat,outputBytes,targetFormat){
  if(!allowed.has(sourceFormat)||!allowed.has(targetFormat)||sourceFormat===targetFormat)
   return unavailable('Independent P40 geometry comparison requires a supported cross-format line/polygon pair.');
