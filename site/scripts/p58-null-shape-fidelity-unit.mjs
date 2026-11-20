@@ -176,5 +176,59 @@ for(const geometry of [
  assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
  passed++;
 }
+// P58: do not lose the older coordinate-bounds comparison when output
+// contains a Null Shape. CSV and GPX are checked defensively by this generic
+// inspector, even though not all source->SHP routes are publicly advertised.
+{
+ const output=await makeShp([1]);
+ const csv='longitude,latitude,Code\\n'+
+  pts.map(([x,y],i)=>x+','+y+','+(i+1)).join('\\n')+'\\n';
+ const report=await createGISQualityReport(
+  new File([csv],'points.csv'),'csv',output,'shp');
+ assert.equal(report.input.complete,true);
+ assert.equal(check(report,'coordinate-bounds').status,'pass');
+ assert.equal(check(report,'shp-null-shape-loss').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+ passed++;
+}
+{
+ const gpx='<gpx version="1.1">'+pts.map(([x,y])=>
+  '<wpt lon="'+x+'" lat="'+y+'"/>').join('')+'</gpx>';
+ const report=await createGISQualityReport(
+  new File([gpx],'points.gpx'),'gpx',await makeShp([1]),'shp');
+ assert.equal(report.input.complete,true);
+ assert.equal(check(report,'coordinate-bounds').status,'pass');
+ assert.equal(check(report,'shp-null-shape-loss').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+ passed++;
+}
+// KML with a fake Point inside a description, CDATA, or XML comment has no
+// demonstrable middle geometry. Such source files may produce Null Shape.
+for(const fake of [
+ '<description><![CDATA[<Point><coordinates>116.5,40</coordinates></Point>]]></description>',
+ '<!-- <Point><coordinates>116.5,40</coordinates></Point> -->',
+ '<description><Point><coordinates>116.5,40</coordinates></Point></description>'
+]){
+ const good=([x,y])=>'<Placemark><Point><coordinates>'+
+  x+','+y+'</coordinates></Point></Placemark>';
+ const kml='<kml><Document>'+good(pts[0])+'<Placemark>'+
+  fake+'</Placemark>'+good(pts[2])+'</Document></kml>';
+ const file=new File([kml],'false-point.kml');
+ const report=await createGISQualityReport(
+  file,'kml',await makeShp([1]),'shp');
+ assert.equal(report.input.knownNonNullGeometries,false);
+ assert.equal(check(report,'shp-null-shape-loss').status,'unavailable');
+ assert.equal(report.output.shpNullShapes,1);
+ // Do not block an output whose source geometry was never proven.
+ assert.equal(check(report,'shp-record-integrity').status,'pass');
+ passed++;
+ const kmz=new JSZip();kmz.file('doc.kml',kml);
+ const kmzReport=await createGISQualityReport(
+  new File([await kmz.generateAsync({type:'uint8array'})],'false-point.kmz'),
+  'kmz',await makeShp([1]),'shp');
+ assert.equal(kmzReport.input.knownNonNullGeometries,false);
+ assert.equal(check(kmzReport,'shp-null-shape-loss').status,'unavailable');
+ passed++;
+}
 console.log('P58_NULL_SHAPE_FIDELITY PASSED: '+passed+
  ' complete and incomplete GeoJSON/KML inputs, matching-count/bbox middle geometry deletion, all-null output, malformed null shape and critical DATA_LOSS');
