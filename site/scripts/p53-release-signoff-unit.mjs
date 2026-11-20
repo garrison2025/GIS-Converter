@@ -39,6 +39,16 @@ assert(workflow.includes('timeout 900s')&&workflow.includes('APT_QGIS_DONE')&&
  'QGIS Qt install must be bounded and independently verified');
 assert(workflow.includes('run: npm run smoke:release-signoff'),
  'P53 CI must enforce release evidence boundary');
+assert(workflow.includes('node scripts/p54-package-qgis-evidence-unit.mjs') &&
+ workflow.includes('node scripts/p54-package-qgis-evidence.mjs') &&
+ workflow.includes('site/p54-qgis-release-artifacts/'),
+ 'P54 independent synthetic GIS files and SHA-256 signoff artifacts must be retained');
+const artifactScript=read('scripts/p54-package-qgis-evidence.mjs');
+assert(artifactScript.includes("manualQgisInteraction: 'NOT_TESTED'") &&
+ artifactScript.includes("physicalDevice: 'NOT_TESTED'") &&
+ artifactScript.includes("createHash") &&
+ artifactScript.includes("p53-browser-survey-lines.kml"),
+ 'P54 archive must fail closed and never claim human/physical validation');
 assert(workflow.includes('branches:')&&workflow.includes('main'),
  'P53 missing main exact SHA public acceptance');
 assert(!workflow.includes('wrangler pages deploy'),
