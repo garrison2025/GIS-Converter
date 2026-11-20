@@ -266,8 +266,13 @@ function parseKml(bytes,format='kml'){
  meta.pointOnly=valid&&points===placemarks.length&&points>0;
  const kmlRoot=str.match(/<(?:[\w.-]+:)?kml\b([^>]*)>/i);
  const rootNamespace=kmlRoot?.[1].match(/\bxmlns\s*=\s*(['"])([^'"]+)\1/i)?.[2]||'';
- const rootGeometryProved=!!kmlRoot&&(!rootNamespace||
-   rootNamespace==='http://www.opengis.net/kml/2.2');
+ // A Document or Placemark can redeclare the default namespace even when
+ // the root is standard KML. Without full namespace resolution, any nested
+ // xmlns redeclaration makes non-null geometry proof unavailable.
+ const nestedNamespaces=kmlRoot&&/\bxmlns(?::[\w.-]+)?\s*=/i.test(
+  str.slice((kmlRoot.index||0)+kmlRoot[0].length));
+ const rootGeometryProved=!!kmlRoot&&!nestedNamespaces&&
+  (!rootNamespace||rootNamespace==='http://www.opengis.net/kml/2.2');
  meta.knownNonNullGeometries=meta.pointOnly&&rootGeometryProved&&
   placemarks.every(mark=>provenDirectKmlPoint(mark[1]));
  meta.complete=meta.pointOnly;
