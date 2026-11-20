@@ -97,6 +97,20 @@ for(const scenario of ['line','polygon']){
  assert.equal(check(shp,shx),'review','out-of-record XY array rejected');
  tests++;
 }
+{
+ const {shp,shx}=await dec('line');
+ new DataView(shp.buffer).setInt32(148,1_000_001,true);
+ assert.equal(check(shp,shx),'review',
+  'Corrupt million-plus XY count must be rejected before budget fallback');
+ tests++;
+}
+{
+ const {shp,shx}=await dec('polygon');
+ new DataView(shp.buffer).setInt32(144,1_000_001,true);
+ assert.equal(check(shp,shx),'review',
+  'Corrupt oversized part count must not bypass vertex bounds');
+ tests++;
+}
 // End-to-end: even when SHX count, DBF rows and index offsets agree,
 // corrupt XY bytes in an otherwise valid output must trigger DATA_LOSS.
 {
