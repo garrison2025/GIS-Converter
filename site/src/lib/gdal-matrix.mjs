@@ -2,6 +2,7 @@ import JSZip from 'jszip';
 import {applyGpxElevationToKml} from './gpx-elevation.mjs';
 import {enhanceGpxTimedKml} from './gpx-timed-track.mjs';
 import {repairLegacyShpGeojson} from './legacy-shapefile-text.mjs';
+import {restoreKmlExtendedAttributes} from './kml-extended-data-repair.mjs';
 import {routes} from './converter-routes.mjs';
 export {routes};
 const types={shp:'ESRI Shapefile',kml:'KML',gpx:'GPX',geojson:'GeoJSON',csv:'CSV',kmz:'KML'};
@@ -54,6 +55,20 @@ export async function convertGdal(gdal,input,src,dst){
    files.set(kmlKey,timed.bytes);
   }
  }
+ // P53: native GDAL may omit KML SchemaData fields. Only restore original
+ // KML/KMZ text cells linked to a UNIQUE unchanged line/polygon geometry.
+ // The existing independent P40/P51 DATA_LOSS gate still verifies final bytes.
+ let restoredKmlFields=0;
+ if(['kml','kmz'].includes(src)&&dst==='geojson'){
+  const key=[...files.keys()].find(name=>name.toLowerCase().endsWith('.geojson'));
+  if(key){
+   const repaired=await restoreKmlExtendedAttributes(input,files.get(key),src);
+   if(repaired.bytes){
+    files.set(key,repaired.bytes);
+    restoredKmlFields=repaired.fieldsRestored;
+   }
+  }
+ }
  // Some GDAL/WASM builds misdecode Windows-1252 DBF text even with a
  // native .cpg. Re-read original DBF bytes on this SHP→GeoJSON route and
  // correct only strings which independently match the observed mojibake.
@@ -83,7 +98,7 @@ export async function convertGdal(gdal,input,src,dst){
  const ext=dst==='geojson'?'geojson':dst;
  const key=[...files.keys()].find(n=>n.toLowerCase().endsWith('.'+ext));
  if(!key)throw Error('Expected '+ext+' missing: '+[...files.keys()].join(','));
- return {name:'converted.'+ext,bytes:files.get(key),mime:dst==='geojson'?'application/geo+json':'text/plain',files:[...files.keys()],warning:[dst==='gpx'?'GPX cannot represent polygon geometries; information may be lost.':'',legacyTextWarning].filter(Boolean).join(' ')};
+ return {name:'converted.'+ext,bytes:files.get(key),mime:dst==='geojson'?'application/geo+json':'text/plain',files:[...files.keys()],warning:[dst==='gpx'?'GPX cannot represent polygon geometries; information may be lost.':'',legacyTextWarning,restoredKmlFields?'KML ExtendedData text fields were rejoined by unique geometry. Review field types in desktop GIS.':''].filter(Boolean).join(' ')};
 }
 const kml='<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><Placemark><name>Sample Point</name><Point><coordinates>116.4,39.9,0</coordinates></Point></Placemark></Document></kml>';
 export async function makeFixture(format,shpZip){

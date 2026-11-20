@@ -8,6 +8,9 @@ on:
       - site/scripts/p43-browser-qgis-fixtures.mjs
       - site/scripts/p43-qgis-qt-gui.py
       - site/scripts/p53-release-signoff-unit.mjs
+      - site/src/lib/kml-extended-data-repair.mjs
+      - site/src/lib/gdal-matrix.mjs
+      - site/scripts/p53-kml-extended-repair-unit.mjs
       - site/.p53-qgis-release-public-acceptance
       - .github/workflows/p53-qgis-release-acceptance.yml
   workflow_dispatch:
@@ -42,6 +45,8 @@ jobs:
           /usr/bin/python3 -c "from qgis.core import QgsApplication; from qgis.gui import QgsMapCanvas; print('PyQGIS Qt desktop canvas available')"
       - name: Install pinned npm dependencies
         run: npm ci --no-audit --no-fund
+      - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
+        run: npm run smoke:kml-extended-repair
       - name: Cache Playwright 1.57 three-browser binaries
         uses: actions/cache@v4
         with:

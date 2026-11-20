@@ -28,6 +28,8 @@ jobs:
         run: npm run smoke:ci-policy
       - name: P53 prevent false QGIS manual or physical phone signoff
         run: npm run smoke:release-signoff
+      - name: P53 restore only uniquely matched KML extended attributes and preserve DATA_LOSS guard
+        run: npm run smoke:kml-extended-repair
       - name: Independently test bounded GIS structural quality report
         run: npm run smoke:quality-report
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
