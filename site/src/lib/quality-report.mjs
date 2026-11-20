@@ -7,6 +7,7 @@ import {inspectGpxTimedKml} from './gpx-timed-track.mjs';
 import {inspectPointCoordinateFidelity} from './point-coordinate-fidelity.mjs';
 import {inspectComplexGeometryFidelity} from './complex-geometry-fidelity.mjs';
 import {inspectComplexFeatureAttributeFidelity} from './complex-feature-attribute-fidelity.mjs';
+import {inspectShpXYBounds} from './shp-xy-bounds.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -295,18 +296,26 @@ async function parseZip(bytes,format){
  const kinds={1:'point',11:'point',21:'point',8:'point',18:'point',28:'point',3:'line',13:'line',23:'line',5:'polygon',15:'polygon',25:'polygon'};
  const count=b.getUint32(4,true);
  const recordIndex=inspectShpRecordIndex(shp,shx,dbf);
+ const xy=recordIndex.status==='pass'?inspectShpXYBounds(shp,shx):
+  {status:'unavailable',detail:'Shapefile record index is not structurally valid'};
  const meta=blank('shp');
  meta.features=count;meta.geometry=[kinds[shape]||'unknown'];
  meta.shpRecordIntegrity=recordIndex.status;
- meta.pointOnly=recordIndex.status==='pass'&&[1,11,21].includes(shape);
- meta.complete=recordIndex.status==='pass'&&meta.geometry[0]!=='unknown';
+ meta.shpXYBounds=xy.status;
+ meta.pointOnly=recordIndex.status==='pass'&&xy.status!=='review'&&[1,11,21].includes(shape);
+ meta.complete=recordIndex.status==='pass'&&xy.status!=='review'&&
+  meta.geometry[0]!=='unknown';
  if(recordIndex.status==='review')meta.issues.push(recordIndex.detail);
+ if(xy.status==='review')meta.issues.push(xy.detail);
  if(meta.geometry[0]==='unknown')
   meta.issues.push('Shapefile geometry type could not be verified');
  const projected=/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(prj);
  meta.crs=!projected&&/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(prj)?'WGS84':'unknown';
  const corners=[a.getFloat64(36,true),a.getFloat64(44,true),a.getFloat64(52,true),a.getFloat64(60,true)];
- if(corners.every(Number.isFinite)&&corners[0]<=corners[2]&&corners[1]<=corners[3])meta.bbox=corners.map(n=>Math.round(n*1e7)/1e7);
+ // Do not publish or compare unverified SHP header extents as if measured.
+ if(xy.status==='pass'&&corners.every(Number.isFinite)&&
+    corners[0]<=corners[2]&&corners[1]<=corners[3])
+  meta.bbox=corners.map(n=>Math.round(n*1e7)/1e7);
  if(!prj)meta.issues.push('Shapefile projection file is absent');
  return meta;
 }
@@ -330,11 +339,18 @@ export async function createGISQualityReport(input,source,output,target){
  else add('output-structure',after.complete?'pass':'unavailable',after.complete?'Output structure inspected for supported feature types':'Structural inspection was incomplete');
  // Treat unreadable/truncated ZIP output as a critical SHP integrity failure
  // too. A missing result must never be interpreted as "not checked".
- if(target==='shp')
+ if(target==='shp'){
   add('shp-record-integrity',after.shpRecordIntegrity==='pass'?'pass':'review',
     after.shpRecordIntegrity==='pass'
       ? 'SHP records, SHX indexes and DBF row extents independently match'
       : 'Converted Shapefile ZIP, record/index/DBF structure could not be verified');
+  add('shp-xy-bounds',after.shpXYBounds||'unavailable',
+    after.shpXYBounds==='pass'
+      ? 'SHP/SHX file and multipart record bounds match actual XY vertices'
+      : after.shpXYBounds==='review'
+        ? 'Converted Shapefile XY coordinates differ from recorded bounds'
+        : 'Shapefile XY bounds could not be independently checked for this geometry');
+ }
  if(before.features!==null&&after.features!==null&&before.complete&&after.complete){
   add('feature-count',before.features===after.features?'pass':'review',before.features+' input → '+after.features+' output features');
  }else add('feature-count','unavailable','Input/output counts are not directly comparable for these geometries');
@@ -465,7 +481,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='shp-record-integrity'||c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='shp-record-integrity'||c.id==='shp-xy-bounds'||c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
