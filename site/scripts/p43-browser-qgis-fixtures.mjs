@@ -97,6 +97,45 @@ try{
   bytes:polygon.bytes.length,sha256:sha(polygon.bytes),featureCount:2,
   qualityStatus:polygon.quality.status});
 
+
+ // P53: real browser-generated KML and round-tripped GeoJSON, independently
+ // re-read by installed QGIS Qt. Do not certify swapped line attributes.
+ const surveyLines=[
+  {coordinates:[[116.4,39.9],[116.45,39.95],[116.5,40]],label:'Survey east',code:'R-A01'},
+  {coordinates:[[117.1,39.3],[117.12,39.33],[117.14,39.35]],label:'Survey west',code:'R-B02'}
+ ];
+ const sourceLines=featureCollection(surveyLines.map(row=>
+  geoFeature('LineString',row.coordinates,{Name:row.label,Code:row.code})));
+ const lineKml=await convert(page,'geojson-to-kml',
+  {name:'p53-two-survey-lines.geojson',mimeType:'application/geo+json',buffer:Buffer.from(sourceLines)},'.kml');
+ check(/<kml[\s>]/i.test(lineKml.bytes.toString('utf8')),'Browser output missing KML root element');
+ check(lineKml.quality.checks.find(c=>c.id==='complex-feature-attributes')?.status==='pass',
+  'Browser line output attribute-to-geometry join not independently certified');
+ makeFile('p53-browser-survey-lines.kml',lineKml.bytes);
+ evidence.cases.push({name:'browser_two_lines_geojson_to_kml_with_attribute_pairing',
+  bytes:lineKml.bytes.length,sha256:sha(lineKml.bytes),featureCount:2});
+ const lineBack=await convert(page,'kml-to-geojson',
+  {name:'p53-browser-survey-lines.kml',mimeType:'application/vnd.google-earth.kml+xml',
+   buffer:lineKml.bytes},'.geojson');
+ const roundTrip=JSON.parse(lineBack.bytes.toString('utf8'));
+ check(roundTrip.features.length===2,'KML roundtrip dropped an identifiable survey line');
+ for(const expected of surveyLines){
+  const matches=roundTrip.features.filter(feature=>
+   feature.geometry?.type==='LineString'&&
+   feature.geometry.coordinates?.length===expected.coordinates.length&&
+   coordsNear(feature.geometry.coordinates[0][0],expected.coordinates[0][0])&&
+   coordsNear(feature.geometry.coordinates[0][1],expected.coordinates[0][1]));
+  check(matches.length===1,'KML roundtrip duplicated or lost geometry identity');
+  for(let index=0;index<expected.coordinates.length;index++){
+   check(coordsNear(matches[0].geometry.coordinates[index][0],expected.coordinates[index][0])&&
+    coordsNear(matches[0].geometry.coordinates[index][1],expected.coordinates[index][1]),
+    'Intermediate survey-line vertex changed across real GDAL conversion');
+  }
+ }
+ makeFile('p53-browser-survey-lines-roundtrip.geojson',lineBack.bytes);
+ evidence.cases.push({name:'browser_two_lines_kml_to_geojson_for_independent_qgis',
+  bytes:lineBack.bytes.length,sha256:sha(lineBack.bytes),featureCount:2,
+  verifiedVertices:6});
  const cpSource=featureCollection([geoFeature('Point',[-4.42,36.72],
   {Label:'Café Málaga',Code:31})]);
  const cpInput=makeFile('p43-cp1252-source.geojson',cpSource);
