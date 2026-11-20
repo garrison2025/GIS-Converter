@@ -58,11 +58,18 @@ try{
       ...Array.from({length:10},(_,i)=>({name:'synthetic_'+i,status:'PASSED'}))
     ]};
   writeJson('browser-evidence.json',browser);
+  qgis.hashAlgorithm='SHA-256';
+  qgis.acceptedFileSHA256=Object.fromEntries(
+    [...QGIS_REQUIRED_ARTIFACTS,'p43-browser-polygon.cpg']
+    .filter(name=>name!=='qgis-desktop-evidence.json')
+    .map(name=>[name,sha(fs.readFileSync(path.join(source,name)))]));
   writeJson('qgis-desktop-evidence.json',qgis);
 
   const manifest=packageQgisReleaseEvidence({source,output,commit:'example-sha'});
   assert.equal(manifest.expectedCommit,'example-sha');
   assert.equal(manifest.manualQgisInteraction,'NOT_TESTED');
+  assert.equal(manifest.qgisByteBound,true,
+    'Independent QGIS byte identity must be part of the manifest');
   assert(manifest.files.some(f=>f.file==='qgis-fixtures/p43-browser-polygon.cpg'),
     'Generated UTF-8 DBF codepage companion must be retained');
   assert(!manifest.files.some(f=>f.file.includes('customer-private')),
@@ -80,11 +87,31 @@ try{
   fs.writeFileSync(path.join(source,'p53-browser-survey-lines.kml'),
     Buffer.from('<kml>tampered</kml>'));
   assert.throws(()=>packageQgisReleaseEvidence({source,output}),
-    /changed after source evidence capture/,
+    /QGIS accepted dataset changed before archival/,
     'Modified original browser bytes must fail closed');
   assert(!fs.existsSync(output),
     'A failed recheck must invalidate any prior successful artifact');
   fs.writeFileSync(path.join(source,'p53-browser-survey-lines.kml'),kml);
+
+  // P55: DBF has no browser-output case digest. A post-QGIS replacement
+  // of the same named file MUST still be rejected by independent QGIS bytes.
+  const dbfPath=path.join(source,'p43-browser-polygon.dbf');
+  const originalDbf=fs.readFileSync(dbfPath);
+  fs.writeFileSync(dbfPath,Buffer.from('malicious but valid file name'));
+  assert.throws(()=>packageQgisReleaseEvidence({source,output}),
+    /QGIS accepted dataset changed before archival/,
+    'A changed DBF must not be accepted merely because QGIS once read it');
+  assert(!fs.existsSync(output),'Tampered DBF must not preserve stale output');
+  fs.writeFileSync(dbfPath,originalDbf);
+
+  const savedHash=qgis.acceptedFileSHA256['p43-browser-polygon.dbf'];
+  delete qgis.acceptedFileSHA256['p43-browser-polygon.dbf'];
+  writeJson('qgis-desktop-evidence.json',qgis);
+  assert.throws(()=>packageQgisReleaseEvidence({source,output}),
+    /QGIS accepted dataset changed before archival/,
+    'Missing independent DBF source hash must fail closed');
+  qgis.acceptedFileSHA256['p43-browser-polygon.dbf']=savedHash;
+  writeJson('qgis-desktop-evidence.json',qgis);
 
   qgis.status='FAILED';writeJson('qgis-desktop-evidence.json',qgis);
   assert.throws(()=>packageQgisReleaseEvidence({source,output}),
@@ -94,7 +121,7 @@ try{
   fs.unlinkSync(path.join(source,'p43-browser-polygon.dbf'));
   assert.throws(()=>packageQgisReleaseEvidence({source,output}),
     /ENOENT/,'Missing real DBF Shapefile sidecar must not silently pass');
-  console.log('P54_QGIS_ARTIFACT_POLICY PASSED: verified synthetic files, SHA-256, optional CPG, no private files, tampering, failed Qt and missing DBF fail closed');
+  console.log('P55_QGIS_BYTE_BINDING PASSED: all synthetic GIS bytes match independent QGIS hashes, DBF and KML tampering, absent digests, failed Qt, missing sidecars and private-file exclusion fail closed');
 }finally{
   fs.rmSync(tmp,{recursive:true,force:true});
 }
