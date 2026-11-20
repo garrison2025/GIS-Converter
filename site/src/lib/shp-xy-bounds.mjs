@@ -63,14 +63,18 @@ export function inspectShpXYBounds(shp,shx){
    if(size<40)return review('Shapefile multipart record is missing XY metadata');
    const nParts=LINE_OR_POLYGON.has(type)?s.getInt32(start+36,true):0;
    const nPoints=s.getInt32(start+(MULTIPOINT.has(type)?36:40),true);
-   if(nPoints<1||nParts<0||(LINE_OR_POLYGON.has(type)&&nParts<1))
+   if(nPoints<1||nParts<0||
+      (LINE_OR_POLYGON.has(type)&&(nParts<1||nParts>nPoints)))
     return review('Shapefile multipart record has inconsistent XY part counts');
-   if(vertices+nPoints>MAX_VERTICES)
-    return unavailable('Shapefile XY vertex limit reached before full verification');
    const pointStart=start+(MULTIPOINT.has(type)?40:44+4*nParts);
+   // First decide whether the stated XY data COULD fit in the indexed
+   // record. A corrupt 1,000,001-point record must be rejected, not marked
+   // unavailable merely because it exceeds the optional scan budget.
    if(pointStart>end||pointStart+16*nPoints>end)
     return review('Shapefile XY vertex array extends outside its record');
    if(LINE_OR_POLYGON.has(type)){
+    // Part indices are metadata and need verification even if skipping an
+    // otherwise plausible oversize XY scan.
     let last=-1;
     for(let j=0;j<nParts;j++){
      const offset=s.getInt32(start+44+4*j,true);
@@ -80,6 +84,8 @@ export function inspectShpXYBounds(shp,shx){
      last=offset;
     }
    }
+   if(vertices+nPoints>MAX_VERTICES)
+    return unavailable('Shapefile XY vertex limit reached before full verification');
    for(let j=0;j<nPoints;j++){
     const p=pointStart+16*j;
     if(!extend(local,s.getFloat64(p,true),s.getFloat64(p+8,true)))
