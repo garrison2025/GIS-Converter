@@ -10,6 +10,18 @@
 4. **P53 新增：** QGIS `QgsMapCanvas` 在 Qt offscreen 绘制真实输出图层，实际 PNG 除尺寸/字节数外，还必须拥有真实非白地图样本像素。
 5. 浏览器模拟低内存、真实 GDAL/WASM、19 条线上转换路线、19 份预览、Cloudflare 精确 SHA、noindex 保持独立检查。
 
+## P54｜下载与核对可复现的 QGIS 验收数据
+
+P53 原有工作流只上传 JSON 和截图，**没有归档实际 Shapefile、KML 和 GeoJSON 文件**。P54 在独立 QGIS Qt 验收成功后，新增只含合成数据的验收工件：
+
+1. 打开 [GIS Converter GitHub Actions](https://github.com/garrison2025/GIS-Converter/actions)，选择 **GIS Converter P53 QGIS Qt KML desktop interoperability and release boundary** 工作流，进入与要复核的提交 SHA 对应且成功的运行。
+2. 在该运行 **Artifacts** 下载 **gis-p53-real-qgis-qt-kml-interoperability**。其中 **p54-qgis-release-artifacts/qgis-fixtures/** 保存被真实浏览器转换、并经实际安装 PyQGIS Qt 验证的 SHP/SHX/DBF/PRJ、存在时的 CPG/QPJ、KML、GeoJSON 和 Qt 截图；不要把它们误认为真人操作记录。
+3. 打开 **p54-qgis-release-artifacts/manifest.json**，先确认 status 为 **AUTOMATED_QGIS_PASSED_MANUAL_NOT_TESTED**，expectedCommit 与 GitHub 运行提交 SHA 一致，manualQgisInteraction、physicalDevice 均为 **NOT_TESTED**。
+4. 用 SHA-256 工具逐个核对 manifest.json 中每个文件的 bytes 与 sha256。例如 Windows PowerShell 可用命令 Get-FileHash -Algorithm SHA256 加上实际文件路径；若文件缺失、散列不一致或 SHA 与部署版本不符，**不得签核**。
+5. Shapefile 文件应保持同名 SHP/SHX/DBF/PRJ 及实际生成的 CPG 放在同一文件夹中再用 QGIS 打开。按下面的人工操作步骤逐项核对并留存独立真人证据。
+
+本阶段归档程序只打包**明确列出的合成测试文件**，不会递归上传整个工作目录或用户转换文件。仅有自动化截图、仿真设备通过或 GitHub 工作流绿灯，仍不代表 Windows/macOS 真人 QGIS 或实体手机通过。
+
 ## QGIS 手动操作｜NOT_TESTED
 
 - 在 Windows 或 macOS 安装正式 QGIS Desktop，并记录版本、操作系统、日期和执行者。
