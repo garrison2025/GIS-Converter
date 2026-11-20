@@ -194,7 +194,10 @@ function parseDelimitedCsv(bytes){
  * This checker never copies user XML or coordinate values into a report.
  */
 function provenDirectKmlPoint(markup){
- if(/<!--|<!\[CDATA\[|<!DOCTYPE|<!ENTITY/i.test(markup))return false;
+ // Without a namespace resolver, a nested xmlns override makes the local
+ // names ambiguous. Never certify that such elements are KML geometry.
+ if(/<!--|<!\[CDATA\[|<!DOCTYPE|<!ENTITY|\bxmlns(?::[\w.-]+)?\s*=/i.test(markup))
+  return false;
  const tokens=[...markup.matchAll(/<\s*(\/?)\s*([A-Za-z_][\w.:-]*)\b([^<>]*?)>/g)];
  const stack=[];
  let direct=0,locatedCoordinates=0,coordinatesStart=-1;
@@ -261,7 +264,11 @@ function parseKml(bytes,format='kml'){
  }
  meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.pointOnly=valid&&points===placemarks.length&&points>0;
- meta.knownNonNullGeometries=meta.pointOnly&&
+ const kmlRoot=str.match(/<(?:[\\w.-]+:)?kml\\b([^>]*)>/i);
+ const rootNamespace=kmlRoot?.[1].match(/\\bxmlns\\s*=\\s*(['"])([^'"]+)\\1/i)?.[2]||'';
+ const rootGeometryProved=!!kmlRoot&&(!rootNamespace||
+   rootNamespace==='http://www.opengis.net/kml/2.2');
+ meta.knownNonNullGeometries=meta.pointOnly&&rootGeometryProved&&
   placemarks.every(mark=>provenDirectKmlPoint(mark[1]));
  meta.complete=meta.pointOnly;
  if(!meta.complete)meta.issues.push('KML analysis is restricted to one Point coordinate per Placemark; complex KML was not fully inspected');
