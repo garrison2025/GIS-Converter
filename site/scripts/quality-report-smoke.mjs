@@ -12,10 +12,30 @@ function fixture(coords=[116.4,39.9],properties={Name:'测试'}){return JSON.str
 async function test(name,fn){try{await fn();records.push({name,status:'PASSED'});passed++}catch(e){records.push({name,status:'FAILED',error:String(e.stack||e)})}}
 const check=(r,id)=>r.checks.find(c=>c.id===id);
 async function makeShp(count=1){
- const z=new JSZip(),shp=new Uint8Array(128),shx=new Uint8Array(108),dbf=new Uint8Array(32);
- const v=new DataView(shp.buffer);v.setInt32(32,1,true);v.setFloat64(36,116.4,true);v.setFloat64(44,39.9,true);v.setFloat64(52,116.4,true);v.setFloat64(60,39.9,true);
- const dv=new DataView(dbf.buffer);dv.setUint32(4,count,true);
- z.file('points.shp',shp);z.file('points.shx',shx);z.file('points.dbf',dbf);
+ // Produce a genuinely valid ESRI Point record rather than only the SHP
+ // header. P56 must detect corrupt SHX offsets and DBF row extents.
+ const z=new JSZip(),shp=new Uint8Array(128),shx=new Uint8Array(108),
+  dbf=new Uint8Array(75);
+ const v=new DataView(shp.buffer),idx=new DataView(shx.buffer),
+  table=new DataView(dbf.buffer);
+ for(const [view,length] of [[v,shp.length],[idx,shx.length]]){
+  view.setUint32(0,9994,false);view.setUint32(24,length/2,false);
+  view.setUint32(28,1000,true);view.setUint32(32,1,true);
+  view.setFloat64(36,116.4,true);view.setFloat64(44,39.9,true);
+  view.setFloat64(52,116.4,true);view.setFloat64(60,39.9,true);
+ }
+ v.setUint32(100,1,false);v.setUint32(104,10,false);
+ v.setInt32(108,1,true);v.setFloat64(112,116.4,true);
+ v.setFloat64(120,39.9,true);
+ idx.setUint32(100,50,false);idx.setUint32(104,10,false);
+ dbf[0]=3;table.setUint32(4,count,true);
+ table.setUint16(8,65,true);table.setUint16(10,9,true);
+ dbf.set(new TextEncoder().encode('LABEL'),32);
+ dbf[43]=67;dbf[48]=8;dbf[64]=0x0d;dbf[65]=0x20;
+ dbf.set(new TextEncoder().encode('test    '),66);
+ dbf[74]=0x1a;
+ z.file('points.shp',shp);z.file('points.shx',shx);
+ z.file('points.dbf',dbf);
  z.file('points.prj','GEOGCS["WGS 84", DATUM["WGS_1984"]]');
  return new Uint8Array(await z.generateAsync({type:'uint8array'}));
 }
@@ -88,6 +108,75 @@ await test('SHP inconsistent record count yields review',async()=>{
  const r=await createGISQualityReport(new File([shp],'source.zip'),'shp',buf(fixture()),'geojson');
  assert.equal(r.input.complete,false);
  assert.equal(r.status,'review');
+});
+// P56 adversarial tests ensure a matching SHX entry count alone cannot
+// certify the actual binary SHP records or bypass the DATA_LOSS gate.
+async function changeShpComponent(component,edit){
+ const archive=await JSZip.loadAsync(await makeShp());
+ const file=archive.file('points.'+component);
+ const bytes=await file.async('uint8array');
+ edit(bytes,new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength));
+ archive.file('points.'+component,bytes);
+ return new Uint8Array(await archive.generateAsync({type:'uint8array'}));
+}
+await test('P56 SHX correct row count but wrong record offset cannot pass',async()=>{
+ const archive=await changeShpComponent('shx',(_,v)=>v.setUint32(100,51,false));
+ const m=await inspectGISData('shp',archive);
+ assert.equal(m.features,1);assert.equal(m.complete,false);
+ assert.equal(m.shpRecordIntegrity,'review');
+ assert(m.issues.some(s=>s.includes('SHX')));
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',archive,'shp');
+ assert.equal(check(report,'shp-record-integrity').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+});
+await test('P56 SHX false record length cannot certify SHP bytes',async()=>{
+ const archive=await changeShpComponent('shx',(_,v)=>v.setUint32(104,9,false));
+ const m=await inspectGISData('shp',archive);
+ assert.equal(m.complete,false);assert.equal(m.shpRecordIntegrity,'review');
+});
+await test('P56 altered SHP record type is detected',async()=>{
+ const archive=await changeShpComponent('shp',(_,v)=>v.setInt32(108,3,true));
+ const m=await inspectGISData('shp',archive);
+ assert.equal(m.complete,false);
+ assert(m.issues.some(s=>s.includes('geometry type')));
+});
+await test('P56 truncated DBF record area is not a complete layer',async()=>{
+ const archive=await changeShpComponent('dbf',(bytes,v)=>v.setUint16(10,1000,true));
+ const m=await inspectGISData('shp',archive);
+ assert.equal(m.complete,false);
+ assert(m.issues.some(s=>s.includes('DBF')));
+});
+await test('P56 altered declared SHP file length is detected',async()=>{
+ const archive=await changeShpComponent('shp',(_,v)=>v.setUint32(24,50,false));
+ const m=await inspectGISData('shp',archive);
+ assert.equal(m.complete,false);
+ assert(m.issues.some(s=>s.includes('headers')));
+});
+await test('P56 DBF deleted record cannot be marked verified',async()=>{
+ const archive=await changeShpComponent('dbf',bytes=>{bytes[65]=0x2a});
+ const m=await inspectGISData('shp',archive);
+ assert.equal(m.complete,false);
+ assert(m.issues.some(s=>s.includes('deleted')));
+});
+await test('P56 valid indexed Shapefile passes the independent record gate',async()=>{
+ const archive=await makeShp();
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',archive,'shp');
+ assert.equal(check(report,'shp-record-integrity').status,'pass');
+ assert.equal(report.output.complete,true);
+ assert.equal(report.output.features,1);
+});
+await test('P56 non-ZIP output presented as Shapefile blocks download',async()=>{
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',buf('not a ZIP'),'shp');
+ assert.equal(check(report,'shp-record-integrity').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+});
+await test('P56 missing SHX in output ZIP blocks download',async()=>{
+ const zipped=await JSZip.loadAsync(await makeShp());
+ zipped.remove('points.shx');
+ const output=new Uint8Array(await zipped.generateAsync({type:'uint8array'}));
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',output,'shp');
+ assert.equal(check(report,'shp-record-integrity').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
 });
 await test('KMZ doc.kml parsed independently',async()=>{
  const z=new JSZip();z.file('doc.kml','<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>');
@@ -301,7 +390,36 @@ async function p22Zip(fields,records,{cpg=true}={}){
   }
  });
  dbf[dbf.length-1]=0x1a;
- const zip=new JSZip();zip.file('data.dbf',dbf);if(cpg)zip.file('data.cpg','UTF-8');
+ // DBF-only archives are not valid SHP outputs. Attach a real, internally
+ // consistent SHP/SHX point layer so P22 attribute tests are not bypassing
+ // the P56 binary-integrity gate.
+ const n=records.length,shp=new Uint8Array(100+28*n),
+  shx=new Uint8Array(100+8*n);
+ const vs=new DataView(shp.buffer),vi=new DataView(shx.buffer);
+ const points=records.map((_,i)=>i%2?[114.1,22.5]:[116.4,39.9]);
+ const xs=points.map(p=>p[0]),ys=points.map(p=>p[1]);
+ for(const [v,len] of [[vs,shp.length],[vi,shx.length]]){
+  v.setUint32(0,9994,false);v.setUint32(24,len/2,false);
+  v.setUint32(28,1000,true);v.setInt32(32,1,true);
+  if(n){
+   v.setFloat64(36,Math.min(...xs),true);
+   v.setFloat64(44,Math.min(...ys),true);
+   v.setFloat64(52,Math.max(...xs),true);
+   v.setFloat64(60,Math.max(...ys),true);
+  }
+ }
+ for(let i=0;i<n;i++){
+  const record=100+28*i,index=100+8*i;
+  vs.setUint32(record,i+1,false);vs.setUint32(record+4,10,false);
+  vs.setInt32(record+8,1,true);
+  vs.setFloat64(record+12,points[i][0],true);
+  vs.setFloat64(record+20,points[i][1],true);
+  vi.setUint32(index,record/2,false);vi.setUint32(index+4,10,false);
+ }
+ const zip=new JSZip();
+ zip.file('data.shp',shp);zip.file('data.shx',shx);zip.file('data.dbf',dbf);
+ zip.file('data.prj','GEOGCS["WGS 84", DATUM["WGS_1984"]]');
+ if(cpg)zip.file('data.cpg','UTF-8');
  return new Uint8Array(await zip.generateAsync({type:'uint8array'}));
 }
 const p22Fields=[{name:'Code',type:'C',width:8},{name:'Label',type:'C',width:28},
