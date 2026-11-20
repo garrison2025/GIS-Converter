@@ -8,6 +8,9 @@ on:
       - site/scripts/p43-browser-qgis-fixtures.mjs
       - site/scripts/p43-qgis-qt-gui.py
       - site/scripts/p53-release-signoff-unit.mjs
+      - site/scripts/p54-package-qgis-evidence.mjs
+      - site/scripts/p54-package-qgis-evidence-unit.mjs
+      - site/P53_RELEASE_SIGNOFF.md
       - site/src/lib/kml-extended-data-repair.mjs
       - site/src/lib/gdal-matrix.mjs
       - site/scripts/p53-kml-extended-repair-unit.mjs
@@ -38,6 +41,8 @@ jobs:
           node-version: 22.23.4
       - name: Verify automatic QGIS versus manual release signoff policy
         run: npm run smoke:release-signoff
+      - name: P54 fail-closed SHA-256 artifact packaging regression
+        run: node scripts/p54-package-qgis-evidence-unit.mjs
       - name: Install bounded native PyQGIS Qt map canvas and GDAL (not full QGIS desktop)
         timeout-minutes: 34
         run: |
@@ -91,6 +96,8 @@ jobs:
         run: npm run smoke:qgis-browser-fixtures
       - name: Installed QGIS opens seven layers and actually renders Qt map canvas
         run: /usr/bin/python3 scripts/p43-qgis-qt-gui.py p43-qgis-fixtures
+      - name: P54 archive only real browser-generated GIS files accepted by independent QGIS
+        run: node scripts/p54-package-qgis-evidence.mjs
       - name: Simulated low memory mobile real GDAL stress, not physical phone
         run: npm run smoke:mobile-resilience
       - name: Recheck exact public 19 conversion routes and 19 previews
@@ -104,6 +111,7 @@ jobs:
         with:
           name: gis-p53-real-qgis-qt-kml-interoperability
           path: |
+            site/p54-qgis-release-artifacts/
             site/p43-qgis-fixtures/browser-evidence.json
             site/p43-qgis-fixtures/qgis-desktop-evidence.json
             site/p43-qgis-fixtures/p43-qgis-desktop-map.png
