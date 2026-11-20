@@ -176,7 +176,13 @@ try{
   return {cancelledActiveWorker:true,privateOldBlobRevoked:Boolean(old),successfulRetry:true,
    workersStarted:workers.starts,workersTerminated:workers.stops};
  });
+ // P52 resource isolation: the preceding 3,000-polygon Chromium test
+ // must release its process tree before the independent WebKit mobile
+ // low-memory conversion. Keep the same fixtures, quality assertions and
+ // actual GDAL/WASM coverage; do not weaken the acceptance threshold.
  await ctx.close();
+ await browser.close();
+ browser=null;
  await run('webkit_touch_mobile_manual_low_memory_download',async()=>{
   kit=await webkit.launch({headless:true});
   const context=await kit.newContext({viewport:{width:390,height:844},
