@@ -75,6 +75,42 @@ function scanGeojsonFieldRisk(features){
    oversizedStrings,highPrecisionNumbers,unsafeIntegers,schemaScanLimited:overflow};
 }
 
+/**
+ * P58 source guarantee is intentionally narrower than generic GeoJSON
+ * inspection. Empty/degenerate arrays may legitimately export Null Shape.
+ * We only block observed Null Shapes when every source feature has a complete,
+ * independently inspectable, non-empty 2D geometry. No coordinates leak into
+ * diagnostic output.
+ */
+function knownNonEmptyGeojsonGeometry(geometry){
+ if(!geometry||typeof geometry!=='object')return false;
+ const xy=p=>Array.isArray(p)&&p.length>=2&&
+  typeof p[0]==='number'&&typeof p[1]==='number'&&
+  Number.isFinite(p[0])&&Number.isFinite(p[1]);
+ const line=l=>Array.isArray(l)&&l.length>=2&&l.every(xy);
+ const ring=r=>{
+  if(!Array.isArray(r)||r.length<4||!r.every(xy))return false;
+  const first=r[0],last=r.at(-1);
+  if(first[0]!==last[0]||first[1]!==last[1])return false;
+  // A zero-area ring may vanish when written to Shapefile. Treat it as
+  // structurally ambiguous instead of falsely certifying geometry loss.
+  let twice=0;
+  for(let i=0;i<r.length-1;i++)
+   twice+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1];
+  return Number.isFinite(twice)&&Math.abs(twice)>1e-14;
+ };
+ const polygon=p=>Array.isArray(p)&&p.length>0&&p.every(ring);
+ const v=geometry.coordinates;
+ switch(geometry.type){
+  case 'Point':return xy(v);
+  case 'MultiPoint':return Array.isArray(v)&&v.length>0&&v.every(xy);
+  case 'LineString':return line(v);
+  case 'MultiLineString':return Array.isArray(v)&&v.length>0&&v.every(line);
+  case 'Polygon':return polygon(v);
+  case 'MultiPolygon':return Array.isArray(v)&&v.length>0&&v.every(polygon);
+  default:return false;
+ }
+}
 function parseGeojson(bytes){
  const meta=blank('geojson');
  let data;
@@ -98,6 +134,8 @@ function parseGeojson(bytes){
  }
  meta.features=data.features.length;meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.fieldRisk=scanGeojsonFieldRisk(data.features);
+ meta.knownNonNullGeometries=valid&&data.features.length>0&&
+  data.features.every(f=>knownNonEmptyGeojsonGeometry(f?.geometry));
  meta.pointOnly=valid&&pointsOnly;meta.complete=valid;
  const declared=String(data.crs?.properties?.name||'').trim().toUpperCase();
  const known=new Set(['CRS84','OGC:CRS84','URN:OGC:DEF:CRS:OGC:1.3:CRS84','EPSG:4326','URN:OGC:DEF:CRS:EPSG::4326','URN:OGC:DEF:CRS:EPSG:6.6:4326']);
@@ -365,9 +403,12 @@ export async function createGISQualityReport(input,source,output,target){
  // Only claim loss if every source geometry was independently inspectable
  // and non-null; incomplete KML/KMZ/unsupported source layers stay unknown.
  if(target==='shp'){
-  const comparable=before.complete&&Number.isInteger(before.features)&&
-    before.features>0&&before.features===after.features&&
-    after.shpRecordIntegrity==='pass'&&
+  const sourceNonNullProved=source==='geojson'?
+    before.knownNonNullGeometries===true:
+    ['kml','kmz'].includes(source)&&before.pointOnly===true;
+  const comparable=before.complete&&sourceNonNullProved&&
+    Number.isInteger(before.features)&&before.features>0&&
+    before.features===after.features&&after.shpRecordIntegrity==='pass'&&
     Number.isInteger(after.shpNullShapes);
   const missing=comparable&&after.shpNullShapes>0;
   add('shp-null-shape-loss',comparable?(missing?'review':'pass'):'unavailable',
