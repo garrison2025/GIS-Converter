@@ -117,20 +117,63 @@ async function kml(bytes,format){
  return kmlText(decode(await entry.async('uint8array')));
 }
 async function shp(bytes){
- if(bytes.length>MAX_BYTES)fail();
- const dbf=await readUtf8ShapefileDbf(bytes);
- if(dbf.count<1||dbf.count>MAX_RECORDS||dbf.fields.length>MAX_FIELDS||
-   dbf.ambiguousLowerNames.size)fail();
+ if(!(bytes instanceof Uint8Array)||bytes.length>MAX_BYTES)fail();
+ const archive=await JSZip.loadAsync(bytes);
+ const names=Object.keys(archive.files).filter(n=>!archive.files[n].dir);
+ if(names.length>48)fail();
+ const related=/\\.(?:shp|shx|dbf|prj|cpg)$/i,files=new Map();
+ for(const name of names){
+  if(!related.test(name))continue;
+  const key=name.toLowerCase();
+  if(files.has(key))fail();
+  files.set(key,archive.file(name));
+ }
+ const stems=[...files.keys()].filter(n=>n.endsWith('.shp'))
+  .map(n=>n.slice(0,-4)).sort();
+ if(!stems.length||stems.length>8)fail();
+ const known=new Set(stems);
+ for(const key of files.keys()){
+  const stem=key.replace(/\\.(?:shp|shx|dbf|prj|cpg)$/,'');
+  if(!known.has(stem))fail();
+ }
+ let inflated=0;
+ for(const file of files.values()){
+  const size=file?._data?.uncompressedSize;
+  if(!Number.isFinite(size)||size<0)fail();
+  inflated+=size;
+  if(inflated>MAX_BYTES)fail();
+ }
  const records=[];
- for(let row=0;row<dbf.count;row++){
-  const entries=[];
-  for(const f of dbf.fields){
-   let value;
-   try{value=readComparableDbfValue(dbf,row,f)}
-   catch{value={kind:'unsupported',value:null}}
-   entries.push([f.name,value]);
+ for(const stem of stems){
+  const shpFile=files.get(stem+'.shp'),shxFile=files.get(stem+'.shx'),
+   dbfFile=files.get(stem+'.dbf'),cpgFile=files.get(stem+'.cpg'),
+   prjFile=files.get(stem+'.prj');
+  if(!shpFile||!shxFile||!dbfFile||!cpgFile||!prjFile)fail();
+  const [shx,cpg]=await Promise.all([
+   shxFile.async('uint8array'),cpgFile.async('string')
+  ]);
+  if(shx.length<100||(shx.length-100)%8)fail();
+  const index=new DataView(shx.buffer,shx.byteOffset,shx.byteLength);
+  const count=(shx.length-100)/8;
+  if(index.getUint32(0,false)!==9994||index.getUint32(28,true)!==1000||
+    index.getUint32(24,false)*2!==shx.length)fail();
+  const mini=new JSZip();
+  mini.file('layer.dbf',await dbfFile.async('uint8array'));
+  mini.file('layer.cpg',cpg);
+  const dbf=await readUtf8ShapefileDbf(
+   new Uint8Array(await mini.generateAsync({type:'uint8array',compression:'STORE'})));
+  if(dbf.count!==count||dbf.count<1||records.length+dbf.count>MAX_RECORDS||
+   dbf.fields.length>MAX_FIELDS||dbf.ambiguousLowerNames.size)fail();
+  for(let row=0;row<dbf.count;row++){
+   const entries=[];
+   for(const field of dbf.fields){
+    let value;
+    try{value=readComparableDbfValue(dbf,row,field)}
+    catch{value={kind:'unsupported',value:null}}
+    entries.push([field.name,value]);
+   }
+   records.push(fields(entries));
   }
-  records.push(fields(entries));
  }
  return records;
 }
