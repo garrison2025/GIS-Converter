@@ -249,9 +249,11 @@ let tests=0;
  const r=await run(new Uint8Array(await mixed.generateAsync({type:'uint8array'})),
   'shp',geojson([feature({Code:1},{type:'Point',coordinates:[116.4,39.9]}),
    feature(props(lineFeature),lineGeom)]),'geojson');
- assert.equal(check(r,'complex-geometry-values'),'unavailable');
- assert.equal(check(r,'complex-feature-attributes'),'unavailable',
-  'Mixed Point/Line layer archives remain outside the P61 certification scope');
+ assert.equal(check(r,'complex-geometry-values'),'pass',
+  'P62 now independently validates a mixed Point and Line archive');
+ assert.equal(check(r,'complex-feature-attributes'),'review',
+  'P62 must catch the missing Point Name field instead of leaving a known loss unknown');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
  tests++;
 }
 console.log('P61_MULTI_LAYER_LINE_POLYGON_FIDELITY PASSED '+tests+
