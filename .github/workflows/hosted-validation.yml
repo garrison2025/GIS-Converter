@@ -36,6 +36,8 @@ jobs:
         run: npm run smoke:quality-report
       - name: P57 verify actual XY vertices against SHP/SHX file bounds and multipart records
         run: node scripts/p57-shp-xy-bounds-unit.mjs
+      - name: P58 detect null geometry substitutions even with unchanged feature count and file bbox
+        run: node scripts/p58-null-shape-fidelity-unit.mjs
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
         run: npm run smoke:mini-batch-unit
       - name: P35 verify bounded WGS84 output vector sample, polygon holes and CRS rejection

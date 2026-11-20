@@ -75,6 +75,42 @@ function scanGeojsonFieldRisk(features){
    oversizedStrings,highPrecisionNumbers,unsafeIntegers,schemaScanLimited:overflow};
 }
 
+/**
+ * P58 source guarantee is intentionally narrower than generic GeoJSON
+ * inspection. Empty/degenerate arrays may legitimately export Null Shape.
+ * We only block observed Null Shapes when every source feature has a complete,
+ * independently inspectable, non-empty 2D geometry. No coordinates leak into
+ * diagnostic output.
+ */
+function knownNonEmptyGeojsonGeometry(geometry){
+ if(!geometry||typeof geometry!=='object')return false;
+ const xy=p=>Array.isArray(p)&&p.length>=2&&
+  typeof p[0]==='number'&&typeof p[1]==='number'&&
+  Number.isFinite(p[0])&&Number.isFinite(p[1]);
+ const line=l=>Array.isArray(l)&&l.length>=2&&l.every(xy);
+ const ring=r=>{
+  if(!Array.isArray(r)||r.length<4||!r.every(xy))return false;
+  const first=r[0],last=r.at(-1);
+  if(first[0]!==last[0]||first[1]!==last[1])return false;
+  // A zero-area ring may vanish when written to Shapefile. Treat it as
+  // structurally ambiguous instead of falsely certifying geometry loss.
+  let twice=0;
+  for(let i=0;i<r.length-1;i++)
+   twice+=r[i][0]*r[i+1][1]-r[i+1][0]*r[i][1];
+  return Number.isFinite(twice)&&Math.abs(twice)>1e-14;
+ };
+ const polygon=p=>Array.isArray(p)&&p.length>0&&p.every(ring);
+ const v=geometry.coordinates;
+ switch(geometry.type){
+  case 'Point':return xy(v);
+  case 'MultiPoint':return Array.isArray(v)&&v.length>0&&v.every(xy);
+  case 'LineString':return line(v);
+  case 'MultiLineString':return Array.isArray(v)&&v.length>0&&v.every(line);
+  case 'Polygon':return polygon(v);
+  case 'MultiPolygon':return Array.isArray(v)&&v.length>0&&v.every(polygon);
+  default:return false;
+ }
+}
 function parseGeojson(bytes){
  const meta=blank('geojson');
  let data;
@@ -98,6 +134,8 @@ function parseGeojson(bytes){
  }
  meta.features=data.features.length;meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.fieldRisk=scanGeojsonFieldRisk(data.features);
+ meta.knownNonNullGeometries=valid&&data.features.length>0&&
+  data.features.every(f=>knownNonEmptyGeojsonGeometry(f?.geometry));
  meta.pointOnly=valid&&pointsOnly;meta.complete=valid;
  const declared=String(data.crs?.properties?.name||'').trim().toUpperCase();
  const known=new Set(['CRS84','OGC:CRS84','URN:OGC:DEF:CRS:OGC:1.3:CRS84','EPSG:4326','URN:OGC:DEF:CRS:EPSG::4326','URN:OGC:DEF:CRS:EPSG:6.6:4326']);
@@ -149,6 +187,56 @@ function parseDelimitedCsv(bytes){
  if(good!==rows)meta.issues.push('Some CSV rows lack valid WGS84 coordinates');
  return meta;
 }
+/**
+ * Strict P58-only proof that a simple KML Point is an actual direct child
+ * of each Placemark, not text in CDATA, comments or nested description tags.
+ * Deliberately return false for ambiguous constructs, prefixes or markup.
+ * This checker never copies user XML or coordinate values into a report.
+ */
+function provenDirectKmlPoint(markup){
+ // Without a namespace resolver, a nested xmlns override makes the local
+ // names ambiguous. Never certify that such elements are KML geometry.
+ if(/<!--|<!\[CDATA\[|<!DOCTYPE|<!ENTITY|\bxmlns(?::[\w.-]+)?\s*=/i.test(markup))
+  return false;
+ const tokens=[...markup.matchAll(/<\s*(\/?)\s*([A-Za-z_][\w.:-]*)\b([^<>]*?)>/g)];
+ const stack=[];
+ let direct=0,locatedCoordinates=0,coordinatesStart=-1;
+ for(const token of tokens){
+  const rawName=token[2];
+  const name=rawName.split(':').at(-1).toLowerCase();
+  const closing=token[1]==='/';
+  const tail=token[3];
+  // We do not independently resolve XML namespace bindings here. A foreign
+  // <fake:coordinates> is not a valid KML geometry coordinate element, even
+  // when it appears below <Point>. Limit certification to unprefixed KML
+  // elements; namespaced but valid documents remain "unavailable".
+  if((name==='point'&&rawName!=='Point')||
+     (name==='coordinates'&&rawName!=='coordinates'))return false;
+  if(closing){
+   // XML names are case-sensitive; prefixes must match the opening tag.
+   if(stack.at(-1)?.rawName!==rawName)return false;
+   if(name==='coordinates'&&stack.length===2&&stack[0].rawName==='Point'){
+    if(coordinatesStart<0)return false;
+    const contents=markup.slice(coordinatesStart,token.index).trim();
+    const locations=contents.split(/\s+/).filter(Boolean);
+    if(locations.length!==1)return false;
+    const xyz=locations[0].split(',');
+    if(xyz.length<2||xyz.length>3||!pointFromText(xyz[0],xyz[1])||
+       (xyz.length===3&&!strictDecimal.test(xyz[2].trim())))
+      return false;
+    locatedCoordinates++;
+   }
+   stack.pop();
+  }else{
+   if(rawName==='Point'&&stack.length===0)direct++;
+   if(rawName==='coordinates'&&stack.length===1&&
+      stack[0].rawName==='Point')
+    coordinatesStart=token.index+token[0].length;
+   if(!/\/\s*$/.test(tail))stack.push({rawName});
+  }
+ }
+ return stack.length===0&&direct===1&&locatedCoordinates===1;
+}
 function parseKml(bytes,format='kml'){
  let str;
  try{str=new TextDecoder('utf-8',{fatal:true}).decode(bytes)}
@@ -176,6 +264,17 @@ function parseKml(bytes,format='kml'){
  }
  meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.pointOnly=valid&&points===placemarks.length&&points>0;
+ const kmlRoot=str.match(/<(?:[\w.-]+:)?kml\b([^>]*)>/i);
+ const rootNamespace=kmlRoot?.[1].match(/\bxmlns\s*=\s*(['"])([^'"]+)\1/i)?.[2]||'';
+ // A Document or Placemark can redeclare the default namespace even when
+ // the root is standard KML. Without full namespace resolution, any nested
+ // xmlns redeclaration makes non-null geometry proof unavailable.
+ const nestedNamespaces=kmlRoot&&/\bxmlns(?::[\w.-]+)?\s*=/i.test(
+  str.slice((kmlRoot.index||0)+kmlRoot[0].length));
+ const rootGeometryProved=!!kmlRoot&&!nestedNamespaces&&
+  (!rootNamespace||rootNamespace==='http://www.opengis.net/kml/2.2');
+ meta.knownNonNullGeometries=meta.pointOnly&&rootGeometryProved&&
+  placemarks.every(mark=>provenDirectKmlPoint(mark[1]));
  meta.complete=meta.pointOnly;
  if(!meta.complete)meta.issues.push('KML analysis is restricted to one Point coordinate per Placemark; complex KML was not fully inspected');
  return meta;
@@ -241,7 +340,7 @@ function inspectShpRecordIndex(shp,shx,dbf){
     indexCount!==count)
   return invalid('Shapefile DBF record extent or SHX row count is inconsistent');
  const datasetShape=shape.getInt32(32,true);
- let expectedOffset=100;
+ let expectedOffset=100,nullShapes=0;
  for(let i=0;i<indexCount;i++){
   const at=100+i*8;
   const recordWordOffset=index.getUint32(at,false);
@@ -256,6 +355,12 @@ function inspectShpRecordIndex(shp,shx,dbf){
   const recordShape=shape.getInt32(expectedOffset+8,true);
   if(recordShape!==0&&recordShape!==datasetShape)
    return invalid('Shapefile record geometry type differs from its layer');
+  if(recordShape===0){
+   // Null Shape is a legal ESRI record type but must never be silently
+   // substituted for a geometry known to exist in the source dataset.
+   if(contentWords!==2)return invalid('Null Shape record has unexpected byte length');
+   nullShapes++;
+  }
   expectedOffset+=8+byteLength;
  }
  if(expectedOffset!==shp.length)
@@ -265,7 +370,8 @@ function inspectShpRecordIndex(shp,shx,dbf){
   if(flag!==0x20)
    return invalid('Shapefile DBF contains deleted or invalid record markers');
  }
- return {status:'pass',detail:'SHP records, SHX offsets/lengths, DBF rows and geometry types match'};
+ return {status:'pass',nullShapes,
+  detail:'SHP records, SHX offsets/lengths, DBF rows and geometry types match'};
 }
 
 async function parseZip(bytes,format){
@@ -301,8 +407,13 @@ async function parseZip(bytes,format){
  const meta=blank('shp');
  meta.features=count;meta.geometry=[kinds[shape]||'unknown'];
  meta.shpRecordIntegrity=recordIndex.status;
+ meta.shpNullShapes=recordIndex.status==='pass'?recordIndex.nullShapes:null;
  meta.shpXYBounds=xy.status;
- meta.pointOnly=recordIndex.status==='pass'&&xy.status!=='review'&&[1,11,21].includes(shape);
+ // Preserve P57 point-only coordinate-bounds comparisons even if an
+ // output contains Null Shape rows. P58 adds a separate critical geometry
+ // loss gate; disabling the older bbox comparison weakens unrelated routes.
+ meta.pointOnly=recordIndex.status==='pass'&&xy.status!=='review'&&
+  [1,11,21].includes(shape);
  meta.complete=recordIndex.status==='pass'&&xy.status!=='review'&&
   meta.geometry[0]!=='unknown';
  if(recordIndex.status==='review')meta.issues.push(recordIndex.detail);
@@ -350,6 +461,29 @@ export async function createGISQualityReport(input,source,output,target){
       : after.shpXYBounds==='review'
         ? 'Converted Shapefile XY coordinates differ from recorded bounds'
         : 'Shapefile XY bounds could not be independently checked for this geometry');
+ }
+ // P58: a Null Shape retains its DBF row and SHX slot, so even feature
+ // count and file-level bounds can match while an interior geometry is gone.
+ // Only claim loss if every source geometry was independently inspectable
+ // and non-null; incomplete KML/KMZ/unsupported source layers stay unknown.
+ if(target==='shp'){
+  const sourceNonNullProved=source==='geojson'?
+    before.knownNonNullGeometries===true:
+    ['kml','kmz'].includes(source)?
+      before.knownNonNullGeometries===true:
+      ['csv','gpx'].includes(source)&&before.pointOnly===true;
+  const comparable=before.complete&&sourceNonNullProved&&
+    Number.isInteger(before.features)&&before.features>0&&
+    before.features===after.features&&after.shpRecordIntegrity==='pass'&&
+    Number.isInteger(after.shpNullShapes);
+  const missing=comparable&&after.shpNullShapes>0;
+  add('shp-null-shape-loss',comparable?(missing?'review':'pass'):'unavailable',
+    comparable
+      ? missing
+        ? 'Output Shapefile contains '+after.shpNullShapes+
+          ' Null Shape geometries where the fully inspected source had none'
+        : 'All '+after.features+' Shapefile records retain non-null geometry'
+      : 'Null Shape loss cannot be determined without matching, independently verified source geometries');
  }
  if(before.features!==null&&after.features!==null&&before.complete&&after.complete){
   add('feature-count',before.features===after.features?'pass':'review',before.features+' input → '+after.features+' output features');
@@ -481,7 +615,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='shp-record-integrity'||c.id==='shp-xy-bounds'||c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='shp-record-integrity'||c.id==='shp-xy-bounds'||c.id==='shp-null-shape-loss'||c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
