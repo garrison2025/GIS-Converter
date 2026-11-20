@@ -125,6 +125,46 @@ let passed=0;
   'Unknown source geometry must not be claimed an independently detected loss');
  passed++;
 }
+// A shallow GeoJSON bbox walk can call an empty LineString, MultiPoint or
+// Polygon "complete", even though OGR may legitimately write a Null Shape.
+for(const geometry of [
+ {type:'LineString',coordinates:[]},
+ {type:'LineString',coordinates:[[116.5,40]]},
+ {type:'MultiPoint',coordinates:[]},
+ {type:'MultiLineString',coordinates:[[]]},
+ {type:'Polygon',coordinates:[]},
+ {type:'Polygon',coordinates:[[]]},
+ {type:'MultiPolygon',coordinates:[]},
+ {type:'Polygon',coordinates:[[
+   [116.5,40],[116.5,40],[116.5,40],[116.5,40]
+ ]]},
+]){
+ const document=JSON.parse(json(pts));
+ document.features[1].geometry=geometry;
+ const src=new File([JSON.stringify(document)],'ambiguous-geometry.geojson');
+ const report=await createGISQualityReport(src,'geojson',
+  await makeShp([1]),'shp');
+ assert.equal(report.input.knownNonNullGeometries,false,
+  geometry.type+' empty/degenerate geometry must not be certified');
+ assert.equal(check(report,'shp-null-shape-loss').status,'unavailable',
+  geometry.type+' Null Shape is not proven source geometry loss');
+ passed++;
+}
+{
+ const sourceJson=JSON.parse(json(pts));
+ sourceJson.features[1].geometry={
+  type:'Polygon',coordinates:[[
+   [116.5,40],[116.55,40],[116.55,40.05],[116.5,40]
+  ]]
+ };
+ const report=await createGISQualityReport(
+  new File([JSON.stringify(sourceJson)],'nonempty-polygon.geojson'),
+  'geojson',await makeShp([1]),'shp');
+ assert.equal(report.input.knownNonNullGeometries,true);
+ assert.equal(check(report,'shp-null-shape-loss').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+ passed++;
+}
 {
  const kml='<kml><Document>'+pts.map(([lon,lat])=>
   '<Placemark><Point><coordinates>'+lon+','+lat+
