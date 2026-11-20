@@ -55,7 +55,9 @@ try:
         'native_cp1252':('p43-native-cp1252.shp',1,'EPSG:4326'),
         'browser_cp1252':('p43-browser-cp1252.geojson',1,'EPSG:4326'),
         'native_projected':('p43-native-epsg3857.shp',1,'EPSG:3857'),
-        'browser_reprojected':('p43-browser-reprojected.geojson',1,'EPSG:4326')
+        'browser_reprojected':('p43-browser-reprojected.geojson',1,'EPSG:4326'),
+        'browser_survey_kml':('p53-browser-survey-lines.kml',2,'EPSG:4326'),
+        'browser_survey_geojson':('p53-browser-survey-lines-roundtrip.geojson',2,'EPSG:4326')
     }
     for key,(basename,count,crs) in files.items():
         def validate(key=key,basename=basename,count=count,crs=crs):
@@ -121,6 +123,48 @@ try:
         return {'sourceCRS':'EPSG:3857','outputCRS':'EPSG:4326',
             'reprojectedCoordinatesVerified':True}
     check('QGIS_gui_native_3857_to_browser_4326',reprojected)
+
+    def survey_lines():
+        # Count alone cannot detect geometry-to-attribute row swaps. Match every
+        # feature with its unique first coordinate and verify all 3 vertices.
+        expected=[
+            ((116.4,39.9),[(116.4,39.9),(116.45,39.95),(116.5,40)],
+             'Survey east','R-A01'),
+            ((117.1,39.3),[(117.1,39.3),(117.12,39.33),(117.14,39.35)],
+             'Survey west','R-B02')
+        ]
+        checks={}
+        for key in ('browser_survey_kml','browser_survey_geojson'):
+            layer=layers[key]
+            require(layer.geometryType()==QgsWkbTypes.LineGeometry,
+                'QGIS opened survey line dataset with wrong geometry type')
+            matched=set()
+            for feature in layer.getFeatures():
+                geom=feature.geometry()
+                require(geom is not None and not geom.isNull() and not geom.isEmpty(),
+                    'QGIS read a null survey line')
+                vertices=[(v.x(),v.y()) for v in geom.vertices()]
+                require(len(vertices)==3,'QGIS lost an intermediate survey line vertex')
+                candidates=[(i,line,name,code)
+                    for i,(start,line,name,code) in enumerate(expected)
+                    if abs(vertices[0][0]-start[0])<0.00011 and
+                       abs(vertices[0][1]-start[1])<0.00011]
+                require(len(candidates)==1,
+                    'QGIS could not uniquely match a survey line by geometry')
+                i,line,name,code=candidates[0]
+                require(i not in matched,'QGIS returned duplicate geometry instead of two lines')
+                matched.add(i)
+                for actual,original in zip(vertices,line):
+                    require(abs(actual[0]-original[0])<0.00011 and
+                            abs(actual[1]-original[1])<0.00011,
+                        'QGIS detected a moved or reordered intermediate vertex')
+                actualValues={str(feature[field.name()]) for field in layer.fields()}
+                require(name in actualValues and code in actualValues,
+                    'QGIS lost or reassigned survey name/code for this geometry')
+            require(matched=={0,1},'QGIS did not read both unique survey line geometries')
+            checks[key]={'features':2,'vertices':6,'joinedAttributes':True}
+        return checks
+    check('QGIS_gui_real_KML_and_roundtrip_line_vertices_attributes',survey_lines)
     def desktop_canvas():
         project=QgsProject.instance()
         project.setCrs(layers['browser_polygon'].crs())
@@ -149,10 +193,22 @@ try:
             'QGIS Qt canvas screenshot is smaller than expected')
         require(image.save(str(shot),'PNG'),'Cannot save actual QGIS Qt GUI screenshot')
         require(shot.stat().st_size>2500,'QGIS Qt GUI screenshot contains too little data')
+
+        # A sizeable PNG can still contain a blank map. Sample the actual
+        # QgsMapCanvas drawing area for rendered polygon symbol colors.
+        bitmap=image.toImage()
+        colored=0
+        for y in range(40,image.height()-40,12):
+            for x in range(40,image.width()-40,12):
+                pixel=bitmap.pixelColor(x,y)
+                if pixel.alpha()>0 and min(pixel.red(),pixel.green(),pixel.blue())<220:
+                    colored+=1
+        require(colored>=15,'QGIS Qt map canvas is visually blank')
         canvas.hide()
         return {'mapCanvas':'QgsMapCanvas','screenshot':shot.name,
             'width':image.width(),'height':image.height(),
-            'screenshotBytes':shot.stat().st_size}
+            'screenshotBytes':shot.stat().st_size,
+            'nonWhiteMapSamplePixels':colored}
     check('QGIS_actual_Qt_map_canvas_rendered_and_screenshot',desktop_canvas)
     evidence['status']='PASSED'
 except Exception as error:

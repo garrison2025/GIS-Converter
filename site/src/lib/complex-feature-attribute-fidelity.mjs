@@ -97,6 +97,15 @@ function kmlText(text){
   return fields(found);
  });
 }
+/**
+ * P53: expose the same bounded, strict XML attribute reader to the in-browser
+ * KML→GeoJSON repair path. This is private Worker-only data; never serialized
+ * into test reports or sent to a server. Invalid/ambiguous XML returns null.
+ */
+export function readKmlComplexAttributeRows(bytes){
+ try{return kmlText(decode(bytes))}
+ catch{return null}
+}
 async function kml(bytes,format){
  if(format==='kml')return kmlText(decode(bytes));
  if(bytes.length>MAX_BYTES)fail();

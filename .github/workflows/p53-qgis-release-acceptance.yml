@@ -1,0 +1,119 @@
+name: GIS Converter P53 QGIS Qt KML desktop interoperability and release boundary
+on:
+  push:
+    branches:
+      - 'dev/p53-*'
+      - main
+    paths:
+      - site/scripts/p43-browser-qgis-fixtures.mjs
+      - site/scripts/p43-qgis-qt-gui.py
+      - site/scripts/p53-release-signoff-unit.mjs
+      - site/src/lib/kml-extended-data-repair.mjs
+      - site/src/lib/gdal-matrix.mjs
+      - site/scripts/p53-kml-extended-repair-unit.mjs
+      - site/.p53-qgis-release-public-acceptance
+      - .github/workflows/p53-qgis-release-acceptance.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gis-p53-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name == 'push' }}
+jobs:
+  qgis-qt-independent:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    defaults:
+      run:
+        working-directory: site
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONUNBUFFERED: '1'
+      GIS_EXPECTED_COMMIT: ${{ github.sha }}
+      GIS_EXPECTED_BRANCH: main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.4
+      - name: Verify automatic QGIS versus manual release signoff policy
+        run: npm run smoke:release-signoff
+      - name: Install bounded native PyQGIS Qt map canvas and GDAL (not full QGIS desktop)
+        timeout-minutes: 34
+        run: |
+          # Full QGIS Desktop pulls multimedia/webkit and 100+ GUI packages;
+          # previous jobs spent 30-50 minutes on apt network downloads.
+          # python3-qgis provides the actual QgsMapCanvas and OGR provider.
+          # Keep the independent Qt widget and all geometry/attribute gates.
+          export DEBIAN_FRONTEND=noninteractive
+          APT_OPTS=(-o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          echo "APT_QGIS_BEGIN $(date -u +%FT%TZ)"
+          if ! timeout 900s sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends python3-qgis gdal-bin xvfb; then
+            echo "APT_QGIS_INITIAL_INSTALL_FAILED: refresh bounded Ubuntu package indexes once"
+            timeout 140s sudo apt-get "${APT_OPTS[@]}" update
+            timeout 900s sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends python3-qgis gdal-bin xvfb
+          fi
+          echo "APT_QGIS_DONE $(date -u +%FT%TZ)"
+          /usr/bin/python3 -c "from qgis.core import Qgis, QgsApplication; from qgis.gui import QgsMapCanvas; print('REAL_PYQGIS_QT_CANVAS', Qgis.QGIS_VERSION)"
+          ogr2ogr --version
+          dpkg-query -W python3-qgis libqgis-gui* gdal-bin
+
+      - name: Install pinned npm dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
+        run: npm run smoke:kml-extended-repair
+      - name: Cache Playwright 1.57 three-browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: gis-pw-all-${{ runner.os }}-${{ runner.arch }}-ubuntu24.04-v1.57.0
+      - name: Install Chromium Firefox WebKit and Linux dependencies
+        run: timeout 1500s npx playwright install --with-deps chromium firefox webkit
+      - name: Build dev fixture site or confirm exact public merged release SHA
+        run: |
+          if [ "$GITHUB_REF_NAME" = main ]; then
+            echo 'GIS_BASE_URL=https://gis-converter.pages.dev' >> "$GITHUB_ENV"
+            GIS_BASE_URL=https://gis-converter.pages.dev node scripts/p35-await-live-release.mjs
+            GIS_BASE_URL=https://gis-converter.pages.dev npm run smoke:live-release
+          else
+            npm run stage:gdal
+            npm run pack:gdal
+            npm run build
+            (python3 -m http.server 8784 --directory dist > /tmp/p53-qgis-local.log 2>&1 &)
+            echo 'GIS_BASE_URL=http://127.0.0.1:8784' >> "$GITHUB_ENV"
+            for attempt in $(seq 1 55); do
+              if curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null; then break; fi
+              sleep 0.3
+            done
+            curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null
+          fi
+      - name: Download browser SHP CP1252 projected and P53 two-line KML GIS datasets
+        run: npm run smoke:qgis-browser-fixtures
+      - name: Installed QGIS opens seven layers and actually renders Qt map canvas
+        run: /usr/bin/python3 scripts/p43-qgis-qt-gui.py p43-qgis-fixtures
+      - name: Simulated low memory mobile real GDAL stress, not physical phone
+        run: npm run smoke:mobile-resilience
+      - name: Recheck exact public 19 conversion routes and 19 previews
+        if: github.ref_name == 'main'
+        run: |
+          node scripts/live-all-routes.mjs
+          npm run smoke:preview-live
+      - name: Preserve independent QGIS browser Qt screenshot and public evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gis-p53-real-qgis-qt-kml-interoperability
+          path: |
+            site/p43-qgis-fixtures/browser-evidence.json
+            site/p43-qgis-fixtures/qgis-desktop-evidence.json
+            site/p43-qgis-fixtures/p43-qgis-desktop-map.png
+            site/p43-mobile-local-results.json
+            site/p43-mobile-live-results.json
+            site/p35-live-deployment-wait.json
+            site/live-release-gate.json
+            site/live-matrix-report.json
+            site/p35-preview-live-results.json
+          if-no-files-found: warn
+# Actual QGIS Qt widget is automated, not human desktop interaction.
+# Neither simulated device memory nor WebKit emulation is a physical phone test.
+# Engineering preview is still noindex; this workflow does not deploy or enable payments.

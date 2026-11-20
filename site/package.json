@@ -68,6 +68,8 @@
     "smoke:cross-attributes": "node scripts/p50-cross-format-attributes-unit.mjs",
     "smoke:complex-attributes": "node scripts/p51-complex-attribute-unit.mjs",
     "smoke:ci-policy": "node scripts/p52-ci-policy-unit.mjs",
+    "smoke:release-signoff": "node scripts/p53-release-signoff-unit.mjs",
+    "smoke:kml-extended-repair": "node scripts/p53-kml-extended-repair-unit.mjs",
     "smoke:complex-attr-browser": "node scripts/p51-complex-attribute-browser.mjs",
     "smoke:cross-browser": "node scripts/p50-cross-format-browser.mjs",
     "smoke:semantics-browser": "node scripts/p49-attribute-semantics-browser.mjs",
