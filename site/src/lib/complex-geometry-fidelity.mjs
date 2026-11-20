@@ -45,7 +45,8 @@ function signedArea(r){
 function line(raw,state){
  if(!Array.isArray(raw)||raw.length<2)invalid('Invalid line or segment');
  return raw.map(p=>{
-  if(!Array.isArray(p)||p.length<2)invalid('Invalid XY point');
+  if(!Array.isArray(p)||p.length<2||(state.exact2D&&p.length!==2))
+   invalid('Invalid or non-2D XY point');
   return pos(p[0],p[1],state);
  });
 }
@@ -60,6 +61,12 @@ function polygon(raw,state){
  return raw.map(r=>ring(r,state));
 }
 function checkShape(type,raw,state){
+ // P62 is explicit opt-in: legacy P40/P51 geometry checks do not change.
+ // Z/M/3D Points are not silently classified as verified 2D geometry.
+ if(type==='Point'&&state.allowMixedPoints){
+  if(!Array.isArray(raw)||raw.length!==2)invalid('Mixed feature Point is not strictly 2D');
+  return pos(raw[0],raw[1],state);
+ }
  if(type==='LineString')return line(raw,state);
  if(type==='MultiLineString'){
   if(!Array.isArray(raw)||!raw.length)invalid('No MultiLineString components');
@@ -196,8 +203,9 @@ async function shapefile(bytes,state){
    iv.getUint32(24,false)*2!==index.length)
    invalid('SHP/SHX structural mismatch');
   const family=view.getInt32(32,true),indexCount=(index.length-100)/8;
-  if((family!==3&&family!==5)||iv.getInt32(32,true)!==family)
-   invalid('Only 2D WGS84 PolyLine and Polygon layers are supported');
+  if((family!==3&&family!==5&&!(state.allowMixedPoints&&family===1))||
+     iv.getInt32(32,true)!==family)
+   invalid('Only supported 2D WGS84 Point/PolyLine/Polygon layers are inspectable');
   if(dbf.length<33)invalid('SHP layer DBF header is truncated');
   const dv=new DataView(dbf.buffer,dbf.byteOffset,dbf.byteLength);
   const dbfCount=dv.getUint32(4,true),headerLength=dv.getUint16(8,true),
@@ -217,8 +225,17 @@ async function shapefile(bytes,state){
     iv.getUint32(ix+4,false)!==words||view.getUint32(offset,false)!==n+1)
     invalid('SHP/SHX record offset, length or sequence mismatch');
    const type=view.getInt32(offset+8,true);
-   if(type!==family||end-offset<52)
-    invalid('Unexpected SHP geometry family or Null Shape record');
+   if(type!==family)invalid('Unexpected SHP geometry family or Null Shape record');
+   // ESRI Point type 1: exactly 4-byte type + 8-byte X + 8-byte Y.
+   // Reject Z/M variants and trailing bytes instead of claiming 2D fidelity.
+   if(family===1){
+    if(words!==10||end-offset!==28)
+     invalid('Mixed Shapefile Point record is not exactly 2D');
+    records.push({type:'Point',coordinates:pos(
+     view.getFloat64(offset+12,true),view.getFloat64(offset+20,true),state)});
+    offset=end;n++;continue;
+   }
+   if(end-offset<52)invalid('Truncated SHP PolyLine or Polygon');
    const parts=view.getInt32(offset+44,true),points=view.getInt32(offset+48,true);
    const pointStart=offset+52+parts*4;
    if(parts<1||parts>500||points<2||state.vertices+points>MAX_VERTICES||
@@ -312,6 +329,7 @@ function partSame(a,b){
 }
 function geometrySame(a,b){
  if(a.type!==b.type)return false;
+ if(a.type==='Point')return samePoint(a.coordinates,b.coordinates);
  if(a.type==='LineString')return lineSame(a.coordinates,b.coordinates);
  if(a.type==='MultiLineString')
   return uniquelyMatch(a.coordinates,b.coordinates,lineSame).kind==='match';
@@ -329,7 +347,7 @@ function approxBbox(a,b){
 const BBOX_CELL=0.0001;
 const bboxCell=number=>Math.floor(number/BBOX_CELL);
 const bboxKey=(type,x,y)=>type+'|'+x+'|'+y;
-function compare(before,after){
+function compare(before,after,checkMixedFamilies=false){
  const types=new Map();
  for(const f of before)types.set(f.type,(types.get(f.type)||0)+1);
  const summary=before.length+' source and '+after.length+' output complex features; '+
@@ -339,6 +357,15 @@ function compare(before,after){
    before.length+' source / '+after.length+' output. Individual coordinates are omitted.'};
  if(before.length===1&&before[0].type!==after[0].type)
   return {status:'review',detail:'Complex geometry family changed: one input feature and one output feature of different geometry types. Original coordinates omitted.'};
+ if(checkMixedFamilies){
+  // For fully parsed mixed SHP/GeoJSON, a changed family histogram is a
+  // definite loss even if all-feature counts and file-level bounds agree.
+  const afterTypes=new Map();
+  for(const f of after)afterTypes.set(f.type,(afterTypes.get(f.type)||0)+1);
+  if(types.size!==afterTypes.size||
+    [...types].some(([type,count])=>afterTypes.get(type)!==count))
+   return {status:'review',detail:'Mixed Shapefile Point/Line/Polygon geometry family counts differ after conversion. Private coordinates omitted.'};
+ }
 
  // Each bounding box is traversed exactly once. A two-coordinate spatial
  // index identifies likely matches in nine cells, followed by FOUR bound
@@ -386,9 +413,11 @@ function compare(before,after){
    summary+' '+failures+' mismatched complex features. This is a bounded 2D check, not topology certification.'};
 }
 
-async function read(bytes,format){
+async function read(bytes,format,allowMixedPoints=false){
  if(!(bytes instanceof Uint8Array)||bytes.length>MAX_BYTES)invalid('GIS data outside 18 MiB P41 bound');
- const state={vertices:0};
+ if(allowMixedPoints&&!['shp','geojson'].includes(format))
+  invalid('Mixed SHP validation is restricted to GeoJSON and Shapefile');
+ const state={vertices:0,allowMixedPoints,exact2D:allowMixedPoints};
  if(format==='shp')return shapefile(bytes,state);
  if(format==='kmz'){
   const archive=await JSZip.loadAsync(bytes);
@@ -413,12 +442,13 @@ async function read(bytes,format){
  * Deliberately capped below P40's 4,000-feature geometry-only stress budget:
  * pairing complex attributes in highly repeated geometries is not certifiable.
  */
-export async function pairComplexFeatureRows(sourceBytes,sourceFormat,outputBytes,targetFormat){
+export async function pairComplexFeatureRows(sourceBytes,sourceFormat,outputBytes,targetFormat,allowMixedPoints=false){
  if(!allowed.has(sourceFormat)||!allowed.has(targetFormat)||sourceFormat===targetFormat)
   return null;
  try{
   const [before,after]=await Promise.all([
-   read(sourceBytes,sourceFormat),read(outputBytes,targetFormat)
+   read(sourceBytes,sourceFormat,allowMixedPoints),
+   read(outputBytes,targetFormat,allowMixedPoints)
   ]);
   if(!before.length||before.length!==after.length||before.length>300)return null;
   const buckets=new Map(),outputBounds=after.map(normBBox);
@@ -446,12 +476,15 @@ export async function pairComplexFeatureRows(sourceBytes,sourceFormat,outputByte
  }catch{return null}
 }
 
-export async function inspectComplexGeometryFidelity(sourceBytes,sourceFormat,outputBytes,targetFormat){
+export async function inspectComplexGeometryFidelity(sourceBytes,sourceFormat,outputBytes,targetFormat,allowMixedPoints=false){
  if(!allowed.has(sourceFormat)||!allowed.has(targetFormat)||sourceFormat===targetFormat)
   return unavailable('Independent P40 geometry comparison requires a supported cross-format line/polygon pair.');
  try{
-  const [source,target]=await Promise.all([read(sourceBytes,sourceFormat),read(outputBytes,targetFormat)]);
-  return compare(source,target);
+  const [source,target]=await Promise.all([
+   read(sourceBytes,sourceFormat,allowMixedPoints),
+   read(outputBytes,targetFormat,allowMixedPoints)
+  ]);
+  return compare(source,target,allowMixedPoints);
  }catch{
   // Parsing exceptions may contain user data. Never include such text in
   // downloaded reports; skip unsupported shapes instead of false-blocking.
