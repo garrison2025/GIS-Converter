@@ -264,8 +264,8 @@ function parseKml(bytes,format='kml'){
  }
  meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.pointOnly=valid&&points===placemarks.length&&points>0;
- const kmlRoot=str.match(/<(?:[\\w.-]+:)?kml\\b([^>]*)>/i);
- const rootNamespace=kmlRoot?.[1].match(/\\bxmlns\\s*=\\s*(['"])([^'"]+)\\1/i)?.[2]||'';
+ const kmlRoot=str.match(/<(?:[\w.-]+:)?kml\b([^>]*)>/i);
+ const rootNamespace=kmlRoot?.[1].match(/\bxmlns\s*=\s*(['"])([^'"]+)\1/i)?.[2]||'';
  const rootGeometryProved=!!kmlRoot&&(!rootNamespace||
    rootNamespace==='http://www.opengis.net/kml/2.2');
  meta.knownNonNullGeometries=meta.pointOnly&&rootGeometryProved&&
