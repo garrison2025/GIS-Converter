@@ -181,8 +181,8 @@ for(const geometry of [
 // inspector, even though not all source->SHP routes are publicly advertised.
 {
  const output=await makeShp([1]);
- const csv='longitude,latitude,Code\\n'+
-  pts.map(([x,y],i)=>x+','+y+','+(i+1)).join('\\n')+'\\n';
+ const csv='longitude,latitude,Code\n'+
+  pts.map(([x,y],i)=>x+','+y+','+(i+1)).join('\n')+'\n';
  const report=await createGISQualityReport(
   new File([csv],'points.csv'),'csv',output,'shp');
  assert.equal(report.input.complete,true);
