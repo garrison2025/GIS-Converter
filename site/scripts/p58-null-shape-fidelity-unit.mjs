@@ -251,6 +251,18 @@ for(const fake of [
  assert.equal(no.input.knownNonNullGeometries,false,
   'Foreign default namespace must not create an unsupported geometry guarantee');
  assert.equal(check(no,'shp-null-shape-loss').status,'unavailable');
+ const nested='<kml xmlns="http://www.opengis.net/kml/2.2">'+
+  '<Document>'+pts.map(([x,y],i)=>
+   '<Placemark'+(i===1?' xmlns="urn:not-kml"':'')+'>'+
+   '<Point><coordinates>'+x+','+y+
+   '</coordinates></Point></Placemark>').join('')+
+  '</Document></kml>';
+ const redeclared=await createGISQualityReport(
+  new File([nested],'nested-foreign-ns.kml'),'kml',
+  await makeShp([1]),'shp');
+ assert.equal(redeclared.input.knownNonNullGeometries,false,
+  'A Placemark-level default namespace override cannot be certified as KML geometry');
+ assert.equal(check(redeclared,'shp-null-shape-loss').status,'unavailable');
  passed++;
 }
 console.log('P58_NULL_SHAPE_FIDELITY PASSED: '+passed+
