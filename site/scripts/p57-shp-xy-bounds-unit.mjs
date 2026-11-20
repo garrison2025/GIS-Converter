@@ -154,7 +154,8 @@ for(const scenario of ['line','polygon']){
  const input=JSON.stringify({type:'FeatureCollection',features:[point,point]});
  const report=await createGISQualityReport(
   new File([input],'source.geojson'),'geojson',archive,'shp');
- assert.equal(report.checks.find(c=>c.id==='feature-count')?.status,'pass');
+ // A corrupted XY envelope prevents *certifying* matching counts.
+ assert.equal(report.checks.find(c=>c.id==='feature-count')?.status,'unavailable');
  assert.equal(report.checks.find(c=>c.id==='shp-record-integrity')?.status,'pass');
  assert.equal(report.checks.find(c=>c.id==='shp-xy-bounds')?.status,'review');
  assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
