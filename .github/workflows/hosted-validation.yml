@@ -5,6 +5,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# Only the latest development-branch commit needs a full expensive GIS matrix.
+# Every main commit gets its own lane so even pending main runs are preserved.
+concurrency:
+  group: gis-hosted-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name == 'push' }}
 jobs:
   astro-and-gdal:
     runs-on: ubuntu-24.04
@@ -19,6 +24,8 @@ jobs:
           node-version: 22.23.4
       - name: Install audited lockfile deterministically with npm ci
         run: npm ci --no-audit --no-fund
+      - name: P52 enforce safe CI concurrency and full browser/public acceptance coverage
+        run: npm run smoke:ci-policy
       - name: Independently test bounded GIS structural quality report
         run: npm run smoke:quality-report
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
@@ -65,6 +72,11 @@ jobs:
         run: npm run pack:gdal
       - name: Compile actual Astro project
         run: npm run build
+      - name: Cache the three browsers for the pinned Playwright 1.57.0 on Ubuntu 24.04
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: gis-pw-all-${{ runner.os }}-${{ runner.arch }}-ubuntu24.04-v1.57.0
       - name: Install Chromium Firefox and WebKit for real browser and GIS conversion tests
         run: npx playwright install --with-deps chromium firefox webkit
       - name: Probe independent cancellable classic Worker running real GDAL

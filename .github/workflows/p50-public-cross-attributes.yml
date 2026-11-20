@@ -25,10 +25,15 @@ jobs:
           node-version: 22.23.4
       - name: Verify Cloudflare serves the exact merged P50 main SHA
         run: node scripts/p35-await-live-release.mjs
-      - name: Install pinned npm packages and real browser engines
-        run: |
-          npm ci --no-audit --no-fund
-          npx playwright install --with-deps chromium firefox webkit
+      - name: Install locked site dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Reuse compatible Playwright browser binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: gis-pw-all-${{ runner.os }}-${{ runner.arch }}-ubuntu24.04-v1.57.0
+      - name: Install and validate full Chromium Firefox WebKit suite
+        run: timeout 1500s npx playwright install --with-deps chromium firefox webkit
       - name: P49 DBF typed/null semantic regression
         run: npm run smoke:dbf-semantics
       - name: P50 independent CSV KML KMZ GeoJSON attribute mismatch and loss gates
