@@ -51,6 +51,18 @@ assert(artifactScript.includes("manualQgisInteraction: 'NOT_TESTED'") &&
  'P54 archive must fail closed and never claim human/physical validation');
 assert(workflow.includes('branches:')&&workflow.includes('main'),
  'P53 missing main exact SHA public acceptance');
+const artifactPackager=read('scripts/p54-package-qgis-evidence.mjs');
+for(const part of ['acceptedFileSHA256','input_digests_before',
+ 'input_digests_after','hashlib.sha256']){
+ assert(qgis.includes(part),'P55 independent QGIS source-byte attestation missing '+part);
+}
+for(const part of ['acceptedFileSHA256','QGIS accepted dataset changed before archival',
+ 'qgisByteBound: true','deepEqual(acceptedFiles,expectedFiles']){
+ assert(artifactPackager.includes(part),
+  'P55 archive must match every accepted QGIS source byte '+part);
+}
+assert(manual.includes('P55｜QGIS 验收文件与实际归档字节强绑定'),
+ 'P55 operator instructions for independent GIS hashes are missing');
 assert(!workflow.includes('wrangler pages deploy'),
  'P53 cannot deploy, enable payments or activate SEO');
 for(const s of ['QGIS 手动操作','真实手机','Release 判定','NOT_TESTED']){
