@@ -22,6 +22,14 @@ P53 原有工作流只上传 JSON 和截图，**没有归档实际 Shapefile、K
 
 本阶段归档程序只打包**明确列出的合成测试文件**，不会递归上传整个工作目录或用户转换文件。仅有自动化截图、仿真设备通过或 GitHub 工作流绿灯，仍不代表 Windows/macOS 真人 QGIS 或实体手机通过。
 
+## P55｜QGIS 验收文件与实际归档字节强绑定
+
+P54 已提供 SHA-256 文件清单，但其清单原先由归档时计算；如果数据文件在独立 QGIS 读入后、归档之前被替换，单纯计算归档哈希不能证明它是 **QGIS 实际验收过的同一文件**。
+
+P55 使独立 PyQGIS Qt 验收在读取测试数据前后分别计算限定合成 GIS 文件的 SHA-256，并检查测试期间没有变化；完成地图截图后再对截图计算哈希。成功时 `qgis-desktop-evidence.json` 记录 `hashAlgorithm: SHA-256` 和 `acceptedFileSHA256`，**不包含任何真实用户上传内容**。P54 归档器针对每一份受验收文件重新计算 SHA-256，并严格比对 QGIS 记录，连 DBF/SHX/PRJ/CPG 文件也不例外；任何缺项、文件集合不一致、字节被替换都会拒绝生成验收包。
+
+`manifest.json` 增加 `qgisByteBound: true`，表示已做此项一致性检查；它仍**不表示**真实 Windows/macOS 人工操作、实体 Android/iPhone 测试或生产可上线。QGIS 的哈希与浏览器特定 KML/GeoJSON 下载哈希各自独立，不能互相代替。
+
 ## QGIS 手动操作｜NOT_TESTED
 
 - 在 Windows 或 macOS 安装正式 QGIS Desktop，并记录版本、操作系统、日期和执行者。
