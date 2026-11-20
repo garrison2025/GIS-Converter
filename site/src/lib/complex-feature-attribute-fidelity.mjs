@@ -197,16 +197,16 @@ function valueStatus(a,b){
  if(a.kind==='date'&&b.kind==='date')return a.value===b.value?'pass':'review';
  return compareComparableAttributeValues(a,b);
 }
-export async function inspectComplexFeatureAttributeFidelity(inputBytes,sourceFormat,outputBytes,targetFormat){
+export async function inspectComplexFeatureAttributeFidelity(inputBytes,sourceFormat,outputBytes,targetFormat,allowMixedPoints=false){
  if(!formats.has(sourceFormat)||!formats.has(targetFormat)||sourceFormat===targetFormat)
   return unavailable('Complex attribute inspection requires supported cross-format GIS geometry.');
  try{
   // P40 compares actual 2D XY vertices, polygon shells/holes and multipart
   // components. Do not associate rows if two shapes are identical or a
   // conversion has changed their geometry so correspondence is uncertain.
-  const linked=await pairComplexFeatureRows(inputBytes,sourceFormat,outputBytes,targetFormat);
+  const linked=await pairComplexFeatureRows(inputBytes,sourceFormat,outputBytes,targetFormat,allowMixedPoints);
   if(!linked||linked.records>MAX_RECORDS)
-   return unavailable('Complex feature attributes cannot be paired by unique, unchanged WGS84 line/polygon geometry.');
+   return unavailable('Feature attributes cannot be paired by unique, unchanged WGS84 geometry.');
   const [original,exported]=await Promise.all([
    read(inputBytes,sourceFormat),read(outputBytes,targetFormat)
   ]);

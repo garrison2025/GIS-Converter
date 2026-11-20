@@ -11,6 +11,7 @@ on:
       - 'dev/p59-*'
       - 'dev/p60-*'
       - 'dev/p61-*'
+      - 'dev/p62-*'
       - main
     paths:
       - site/scripts/p43-browser-qgis-fixtures.mjs
@@ -24,6 +25,7 @@ on:
       - site/src/lib/quality-report.mjs
       - site/src/lib/multilayer-shp-geojson-fidelity.mjs
       - site/scripts/p61-multilayer-line-polygon-unit.mjs
+      - site/scripts/p62-mixed-shp-geometry-dbf-unit.mjs
       - site/src/lib/complex-geometry-fidelity.mjs
       - site/src/lib/complex-feature-attribute-fidelity.mjs
       - site/scripts/p58-null-shape-fidelity-unit.mjs
@@ -96,6 +98,8 @@ jobs:
         run: node scripts/p60-multilayer-point-dbf-unit.mjs
       - name: P61 independently join line and polygon DBF fields across Shapefile layers
         run: node scripts/p61-multilayer-line-polygon-unit.mjs
+      - name: P62 independently verify mixed Point Line Polygon geometry-linked DBF fields
+        run: node scripts/p62-mixed-shp-geometry-dbf-unit.mjs
       - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
         run: npm run smoke:kml-extended-repair
       - name: Cache Playwright 1.57 three-browser binaries

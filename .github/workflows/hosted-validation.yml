@@ -44,6 +44,8 @@ jobs:
         run: node scripts/p60-multilayer-point-dbf-unit.mjs
       - name: P61 verify multi-layer WGS84 line and polygon geometry plus DBF attributes
         run: node scripts/p61-multilayer-line-polygon-unit.mjs
+      - name: P62 verify mixed Point Line Polygon layer geometry and attribute identity
+        run: node scripts/p62-mixed-shp-geometry-dbf-unit.mjs
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
         run: npm run smoke:mini-batch-unit
       - name: P35 verify bounded WGS84 output vector sample, polygon holes and CRS rejection

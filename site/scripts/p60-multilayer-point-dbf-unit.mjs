@@ -135,8 +135,12 @@ let tests=0;
  const source=new Uint8Array(await mixed.generateAsync({type:'uint8array'}));
  const r=await run(source,geojson([samples[0],samples[1]]));
  assert.equal(r.input.shpLayers,2);
- assert.equal(check(r,'shp-geojson-attributes'),'unavailable',
-  'Mixed line/point geometries require separate certified full-geometry pairing');
+ assert.equal(check(r,'feature-count'),'pass');
+ assert.equal(check(r,'complex-geometry-values'),'review',
+  'P62 independently catches a Line converted into a Point despite unchanged counts');
+ assert.equal(check(r,'shp-geojson-attributes'),undefined,
+  'Mixed layer attribute checks must never use point-only positional DBF matching');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
  tests++;
 }
 {
