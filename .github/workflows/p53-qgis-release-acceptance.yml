@@ -6,6 +6,7 @@ on:
       - 'dev/p54-*'
       - 'dev/p55-*'
       - 'dev/p56-*'
+      - 'dev/p57-*'
       - main
     paths:
       - site/scripts/p43-browser-qgis-fixtures.mjs
