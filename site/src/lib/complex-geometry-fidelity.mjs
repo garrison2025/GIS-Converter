@@ -254,7 +254,6 @@ async function shapefile(bytes,state){
     records.push({type:polygons.length===1?'Polygon':'MultiPolygon',
      coordinates:polygons.length===1?polygons[0]:polygons});
    }
-   state.vertices+=points;
    offset=end;n++;
   }
   if(offset!==raw.length||n!==indexCount)
