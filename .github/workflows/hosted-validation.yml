@@ -6,9 +6,9 @@ on:
 permissions:
   contents: read
 # Only the latest development-branch commit needs a full expensive GIS matrix.
-# Production/main verification must never be canceled by newer commits.
+# Every main commit gets its own lane so even pending main runs are preserved.
 concurrency:
-  group: gis-hosted-${{ github.ref }}
+  group: gis-hosted-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name == 'push' }}
 jobs:
   astro-and-gdal:
