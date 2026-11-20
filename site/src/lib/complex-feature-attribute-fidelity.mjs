@@ -121,7 +121,7 @@ async function shp(bytes){
  const archive=await JSZip.loadAsync(bytes);
  const names=Object.keys(archive.files).filter(n=>!archive.files[n].dir);
  if(names.length>48)fail();
- const related=/\\.(?:shp|shx|dbf|prj|cpg)$/i,files=new Map();
+ const related=/\.(?:shp|shx|dbf|prj|cpg)$/i,files=new Map();
  for(const name of names){
   if(!related.test(name))continue;
   const key=name.toLowerCase();
@@ -133,7 +133,7 @@ async function shp(bytes){
  if(!stems.length||stems.length>8)fail();
  const known=new Set(stems);
  for(const key of files.keys()){
-  const stem=key.replace(/\\.(?:shp|shx|dbf|prj|cpg)$/,'');
+  const stem=key.replace(/\.(?:shp|shx|dbf|prj|cpg)$/,'');
   if(!known.has(stem))fail();
  }
  let inflated=0;
