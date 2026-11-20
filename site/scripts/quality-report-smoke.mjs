@@ -165,6 +165,19 @@ await test('P56 valid indexed Shapefile passes the independent record gate',asyn
  assert.equal(report.output.complete,true);
  assert.equal(report.output.features,1);
 });
+await test('P56 non-ZIP output presented as Shapefile blocks download',async()=>{
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',buf('not a ZIP'),'shp');
+ assert.equal(check(report,'shp-record-integrity').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+});
+await test('P56 missing SHX in output ZIP blocks download',async()=>{
+ const zipped=await JSZip.loadAsync(await makeShp());
+ zipped.remove('points.shx');
+ const output=new Uint8Array(await zipped.generateAsync({type:'uint8array'}));
+ const report=await createGISQualityReport(makeFile(fixture()),'geojson',output,'shp');
+ assert.equal(check(report,'shp-record-integrity').status,'review');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
+});
 await test('KMZ doc.kml parsed independently',async()=>{
  const z=new JSZip();z.file('doc.kml','<kml><Placemark><Point><coordinates>116.4,39.9</coordinates></Point></Placemark></kml>');
  const m=await inspectGISData('kmz',new Uint8Array(await z.generateAsync({type:'uint8array'})));
