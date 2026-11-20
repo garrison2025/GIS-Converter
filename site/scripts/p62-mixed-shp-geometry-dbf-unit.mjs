@@ -280,6 +280,36 @@ let tests=0;
   'Do not reclassify single-layer Point conversion as a mixed-layer certification');
  tests++;
 }
+{
+ // The ONLY Point vanishes into a Line: the output is no longer 'mixed'.
+ // The original both-sides-mixed gate would silently bypass known loss.
+ const f=mixedFeatures();
+ f[0].geometry={type:'LineString',coordinates:[p.xy,[116.41,39.91]]};
+ const r=await run(packed,'shp',geojson(f),'geojson');
+ assert.equal(check(r,'feature-count'),'pass');
+ assert.equal(check(r,'complex-geometry-values'),'review',
+  'Changing the only Point family must not disable mixed geometry validation');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+ tests++;
+}
+{
+ // A multi-layer Point-only archive may be corrupted into all Lines while
+ // retaining the exact number of features and DBF rows.
+ const other={name:'Harbor',code:44,xy:[116.7,40.2]};
+ const source=await bundle([
+  makePointLayer('a_point',[p]),makePointLayer('z_point',[other])
+ ]);
+ const out=geojson([
+  feature(props(p),{type:'LineString',coordinates:[p.xy,[116.41,39.91]]}),
+  feature(props(other),{type:'LineString',coordinates:[other.xy,[116.71,40.21]]})
+ ]);
+ const r=await run(source,'shp',out,'geojson');
+ assert.equal(check(r,'feature-count'),'pass');
+ assert.equal(check(r,'complex-geometry-values'),'review',
+  'Point-only to Line-only family substitution is a real detectable loss');
+ assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
+ tests++;
+}
 console.log('P62_MIXED_MULTI_LAYER_SHP PASSED '+tests+
  ' real-binary cases: three-family ZIP both directions, reordering, Point/Line/Polygon loss,'+
  ' unique DBF association, duplicate Point, family histogram, Z/CRS/CPG unknown, deleted'+
