@@ -387,47 +387,106 @@ async function parseZip(bytes,format){
   if(contents.length>ZIP_LIMIT)return blank(format,'KML exceeds inspection limit');
   return parseKml(contents,'kmz');
  }
- const stem=names.find(n=>n.toLowerCase().endsWith('.shp'))?.slice(0,-4);
- if(!stem)return blank('shp','Shapefile component .shp not found');
- const findExt=ext=>zip.file(names.find(n=>n.toLowerCase()=== (stem+'.'+ext).toLowerCase()));
- const shpFile=findExt('shp'),shxFile=findExt('shx'),dbfFile=findExt('dbf'),prjFile=findExt('prj');
- if(!shpFile||!shxFile||!dbfFile)return blank('shp','Shapefile missing SHP/SHX/DBF');
- const sizes=[shpFile,shxFile,dbfFile].map(f=>f._data?.uncompressedSize??0);
- if(sizes.some(x=>x>ZIP_LIMIT)||sizes.reduce((a,b)=>a+b,0)>ZIP_LIMIT)return blank('shp','Shapefile too large to inspect');
- const [shp,shx,dbf,prj]=await Promise.all([shpFile.async('uint8array'),shxFile.async('uint8array'),dbfFile.async('uint8array'),prjFile?prjFile.async('string'):Promise.resolve('')]);
- if(shp.length<100||shx.length<100||dbf.length<32)return blank('shp','Shapefile header too short');
- const a=new DataView(shp.buffer,shp.byteOffset,shp.byteLength);
- const b=new DataView(dbf.buffer,dbf.byteOffset,dbf.byteLength);
- const shape=a.getInt32(32,true);
- const kinds={1:'point',11:'point',21:'point',8:'point',18:'point',28:'point',3:'line',13:'line',23:'line',5:'polygon',15:'polygon',25:'polygon'};
- const count=b.getUint32(4,true);
- const recordIndex=inspectShpRecordIndex(shp,shx,dbf);
- const xy=recordIndex.status==='pass'?inspectShpXYBounds(shp,shx):
-  {status:'unavailable',detail:'Shapefile record index is not structurally valid'};
- const meta=blank('shp');
- meta.features=count;meta.geometry=[kinds[shape]||'unknown'];
- meta.shpRecordIntegrity=recordIndex.status;
- meta.shpNullShapes=recordIndex.status==='pass'?recordIndex.nullShapes:null;
- meta.shpXYBounds=xy.status;
- // Preserve P57 point-only coordinate-bounds comparisons even if an
- // output contains Null Shape rows. P58 adds a separate critical geometry
- // loss gate; disabling the older bbox comparison weakens unrelated routes.
- meta.pointOnly=recordIndex.status==='pass'&&xy.status!=='review'&&
-  [1,11,21].includes(shape);
- meta.complete=recordIndex.status==='pass'&&xy.status!=='review'&&
-  meta.geometry[0]!=='unknown';
- if(recordIndex.status==='review')meta.issues.push(recordIndex.detail);
- if(xy.status==='review')meta.issues.push(xy.detail);
- if(meta.geometry[0]==='unknown')
-  meta.issues.push('Shapefile geometry type could not be verified');
- const projected=/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(prj);
- meta.crs=!projected&&/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(prj)?'WGS84':'unknown';
- const corners=[a.getFloat64(36,true),a.getFloat64(44,true),a.getFloat64(52,true),a.getFloat64(60,true)];
- // Do not publish or compare unverified SHP header extents as if measured.
- if(xy.status==='pass'&&corners.every(Number.isFinite)&&
-    corners[0]<=corners[2]&&corners[1]<=corners[3])
-  meta.bbox=corners.map(n=>Math.round(n*1e7)/1e7);
- if(!prj)meta.issues.push('Shapefile projection file is absent');
+ // P59: one ZIP may contain multiple ESRI Shapefile layers. Inspecting
+ // only the first *.shp silently certified a package whose second (or later)
+ // layer had a broken SHX/DBF, missing geometry or missing sidecar.
+ // Bound the archive and resolve all components by full, case-folded stem.
+ if(names.length>48)return blank('shp','Shapefile archive contains too many entries to inspect');
+ const related=/\.(?:shp|shx|dbf|prj|cpg)$/i;
+ const components=new Map();
+ for(const name of names){
+  if(!related.test(name))continue;
+  const key=name.toLowerCase();
+  if(components.has(key))return blank('shp','Ambiguous case-insensitive Shapefile component names');
+  components.set(key,zip.file(name));
+ }
+ const stems=[...components.keys()].filter(n=>n.endsWith('.shp')).map(n=>n.slice(0,-4));
+ if(!stems.length)return blank('shp','Shapefile component .shp not found');
+ if(stems.length>8)return blank('shp','Shapefile has more than eight layers to inspect');
+ const knownStems=new Set(stems);
+ for(const key of components.keys()){
+  const stem=key.replace(/\.(?:shp|shx|dbf|prj|cpg)$/,'');
+  if(!knownStems.has(stem))
+   return blank('shp','Shapefile contains a sidecar with no matching SHP layer');
+ }
+ // The total of all decompressed SHP/SHX/DBF bytes must remain bounded,
+ // not just each individual layer. An oversized layer is never certified.
+ let estimatedSize=0;
+ for(const file of components.values()){
+  const size=file?._data?.uncompressedSize;
+  if(!Number.isFinite(size)||size<0)return blank('shp','Shapefile ZIP member size could not be verified');
+  if(file.name.toLowerCase().endsWith('.prj')&&size>1024*1024)
+   return blank('shp','Shapefile projection description is too large');
+  estimatedSize+=size;
+  if(estimatedSize>ZIP_LIMIT)return blank('shp','Combined Shapefile layers exceed inspection limit');
+ }
+ const meta=blank('shp'), kinds={
+  1:'point',11:'point',21:'point',8:'point',18:'point',28:'point',
+  3:'line',13:'line',23:'line',5:'polygon',15:'polygon',25:'polygon'
+ };
+ meta.shpLayers=stems.length;
+ let recordOK=true,xyReview=false,xyAllPass=true,allWGS84=true,
+     allPoint=true,allKindsKnown=true,allBounds=true,anyMissingPrj=false,
+     totalFeatures=0,totalNullShapes=0;
+ const families=new Set(),totalBox=[Infinity,Infinity,-Infinity,-Infinity];
+ for(const stem of stems){
+  const shpFile=components.get(stem+'.shp'),
+   shxFile=components.get(stem+'.shx'),
+   dbfFile=components.get(stem+'.dbf'),
+   prjFile=components.get(stem+'.prj');
+  if(!shpFile||!shxFile||!dbfFile)
+   return blank('shp','A Shapefile layer is missing SHP/SHX/DBF');
+  const [shp,shx,dbf,prj]=await Promise.all([
+   shpFile.async('uint8array'),shxFile.async('uint8array'),
+   dbfFile.async('uint8array'),prjFile?prjFile.async('string'):Promise.resolve('')
+  ]);
+  if(shp.length<100||shx.length<100||dbf.length<33)
+   return blank('shp','A Shapefile layer has a truncated header');
+  const shape=new DataView(shp.buffer,shp.byteOffset,shp.byteLength);
+  const table=new DataView(dbf.buffer,dbf.byteOffset,dbf.byteLength);
+  const kind=kinds[shape.getInt32(32,true)]||'unknown';
+  families.add(kind);
+  if(kind==='unknown')allKindsKnown=false;
+  if(kind!=='point')allPoint=false;
+  totalFeatures+=table.getUint32(4,true);
+  const record=inspectShpRecordIndex(shp,shx,dbf);
+  if(record.status!=='pass'){
+   recordOK=false;
+   meta.issues.push(record.detail);
+  }else totalNullShapes+=record.nullShapes;
+  const xy=record.status==='pass'?inspectShpXYBounds(shp,shx):
+   {status:'unavailable'};
+  if(xy.status!=='pass')xyAllPass=false;
+  if(xy.status==='review'){
+   xyReview=true;
+   meta.issues.push(xy.detail);
+  }
+  const projected=/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(prj);
+  if(projected||!/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(prj))
+   allWGS84=false;
+  if(!prj)anyMissingPrj=true;
+  if(xy.status==='pass'){
+   const b=[36,44,52,60].map(i=>shape.getFloat64(i,true));
+   if(b.every(Number.isFinite)&&b[0]<=b[2]&&b[1]<=b[3]){
+    totalBox[0]=Math.min(totalBox[0],b[0]);
+    totalBox[1]=Math.min(totalBox[1],b[1]);
+    totalBox[2]=Math.max(totalBox[2],b[2]);
+    totalBox[3]=Math.max(totalBox[3],b[3]);
+   }else allBounds=false;
+  }else allBounds=false;
+ }
+ meta.features=totalFeatures;
+ meta.geometry=[...families];
+ meta.shpRecordIntegrity=recordOK?'pass':'review';
+ meta.shpNullShapes=recordOK?totalNullShapes:null;
+ meta.shpXYBounds=xyReview?'review':xyAllPass?'pass':'unavailable';
+ meta.pointOnly=recordOK&&!xyReview&&allPoint;
+ meta.complete=recordOK&&!xyReview&&allKindsKnown;
+ meta.crs=allWGS84?'WGS84':'unknown';
+ if(allBounds&&totalBox.every(Number.isFinite))
+  meta.bbox=totalBox.map(v=>Math.round(v*1e7)/1e7);
+ if(!allKindsKnown)meta.issues.push('Shapefile geometry type could not be verified');
+ if(anyMissingPrj)meta.issues.push('One or more Shapefile layers omit a projection file');
  return meta;
 }
 export async function inspectGISData(format,bytes){
