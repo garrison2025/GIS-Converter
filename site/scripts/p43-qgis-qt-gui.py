@@ -6,6 +6,7 @@ GDAL-only CLI, not a simulated map, and not a human clicking through QGIS.
 Input files are exclusively synthetic files actually downloaded from the
 GIS Converter browser fixture script plus native GDAL-generated inputs.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,35 @@ try:
     evidence['qgisVersion']=QgsApplication.qgisVersion() if hasattr(QgsApplication,'qgisVersion') else 'desktop PyQGIS'
     source_evidence=json.loads((folder/'browser-evidence.json').read_text(encoding='utf8'))
     require(source_evidence['status']=='PASSED','Browser-generated source evidence was not accepted')
+
+    # P55: bind the exact on-disk synthetic GIS components to independent
+    # PyQGIS acceptance, not merely a filename, row count, or source report.
+    # Never hash/arbitrarily publish other files from the runner or user.
+    stems=('p43-browser-polygon','p43-native-cp1252','p43-native-epsg3857')
+    sidecar_extensions=('.shp','.shx','.dbf','.prj','.cpg','.qpj')
+    allowed=set(
+        stem+extension for stem in stems for extension in sidecar_extensions
+    )
+    allowed.update((
+        'p43-browser-cp1252.geojson',
+        'p43-browser-reprojected.geojson',
+        'p53-browser-survey-lines.kml',
+        'p53-browser-survey-lines-roundtrip.geojson',
+        'browser-evidence.json'
+    ))
+    def digest_accepted_inputs():
+        result={}
+        for name in sorted(allowed):
+            candidate=folder/name
+            if not candidate.exists():
+                continue # Optional .cpg/.qpj is not fabricated
+            require(candidate.is_file() and not candidate.is_symlink(),
+                'QGIS synthetic evidence contains a symlink or non-file')
+            require(0<candidate.stat().st_size<=12*1024*1024,
+                'QGIS synthetic file is empty or unbounded')
+            result[name]=hashlib.sha256(candidate.read_bytes()).hexdigest()
+        return result
+    input_digests_before=digest_accepted_inputs()
     layers={}
     files={
         'browser_polygon':('p43-browser-polygon.shp',2,'EPSG:4326'),
@@ -210,6 +240,17 @@ try:
             'screenshotBytes':shot.stat().st_size,
             'nonWhiteMapSamplePixels':colored}
     check('QGIS_actual_Qt_map_canvas_rendered_and_screenshot',desktop_canvas)
+
+    input_digests_after=digest_accepted_inputs()
+    require(input_digests_before==input_digests_after,
+        'Synthetic GIS source bytes changed during independent QGIS acceptance')
+    shot=folder/'p43-qgis-desktop-map.png'
+    require(shot.is_file() and not shot.is_symlink(),
+        'QGIS screenshot is absent from accepted source evidence')
+    input_digests_after['p43-qgis-desktop-map.png']=hashlib.sha256(
+        shot.read_bytes()).hexdigest()
+    evidence['acceptedFileSHA256']=input_digests_after
+    evidence['hashAlgorithm']='SHA-256'
     evidence['status']='PASSED'
 except Exception as error:
     evidence['error']=str(error)[:1000]

@@ -4,6 +4,7 @@ on:
     branches:
       - 'dev/p53-*'
       - 'dev/p54-*'
+      - 'dev/p55-*'
       - main
     paths:
       - site/scripts/p43-browser-qgis-fixtures.mjs
@@ -97,7 +98,7 @@ jobs:
         run: npm run smoke:qgis-browser-fixtures
       - name: Installed QGIS opens seven layers and actually renders Qt map canvas
         run: /usr/bin/python3 scripts/p43-qgis-qt-gui.py p43-qgis-fixtures
-      - name: P54 archive only real browser-generated GIS files accepted by independent QGIS
+      - name: P55 byte-bind all browser GIS artifacts to independent QGIS SHA-256 acceptance
         run: node scripts/p54-package-qgis-evidence.mjs
       - name: Simulated low memory mobile real GDAL stress, not physical phone
         run: npm run smoke:mobile-resilience
