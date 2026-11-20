@@ -211,6 +211,62 @@ function parseGpx(bytes){
  if(!valid)meta.issues.push('Some waypoint coordinates could not be parsed');
  return meta;
 }
+/**
+ * P56: a ZIP with matching .shx entry count and .dbf row count can still
+ * contain SHX entries pointing to unrelated/truncated SHP records. Verify the
+ * actual ESRI SHP/SHX 16-bit-word offsets, lengths and per-record types.
+ * Never copy feature coordinates, names or DBF field values to the report.
+ */
+function inspectShpRecordIndex(shp,shx,dbf){
+ const invalid=detail=>({status:'review',detail});
+ if(shp.length<100||shx.length<100||dbf.length<33)
+  return invalid('Shapefile SHP/SHX/DBF header is truncated');
+ if(shp.length%2||shx.length%2||(shx.length-100)%8)
+  return invalid('Shapefile index or data record alignment is invalid');
+ const shape=new DataView(shp.buffer,shp.byteOffset,shp.byteLength);
+ const index=new DataView(shx.buffer,shx.byteOffset,shx.byteLength);
+ const table=new DataView(dbf.buffer,dbf.byteOffset,dbf.byteLength);
+ if(shape.getUint32(0,false)!==9994||index.getUint32(0,false)!==9994||
+    shape.getUint32(24,false)!==shp.length/2||
+    index.getUint32(24,false)!==shx.length/2||
+    shape.getUint32(28,true)!==1000||index.getUint32(28,true)!==1000||
+    shape.getInt32(32,true)!==index.getInt32(32,true))
+  return invalid('Shapefile SHP and SHX file headers do not agree');
+ const count=table.getUint32(4,true),headerLength=table.getUint16(8,true),
+  recordLength=table.getUint16(10,true),indexCount=(shx.length-100)/8;
+ if(recordLength<1||headerLength<33||headerLength>dbf.length||
+    dbf[headerLength-1]!==0x0d||
+    headerLength+count*recordLength>dbf.length||
+    indexCount!==count)
+  return invalid('Shapefile DBF record extent or SHX row count is inconsistent');
+ const datasetShape=shape.getInt32(32,true);
+ let expectedOffset=100;
+ for(let i=0;i<indexCount;i++){
+  const at=100+i*8;
+  const recordWordOffset=index.getUint32(at,false);
+  const contentWords=index.getUint32(at+4,false);
+  const byteLength=contentWords*2;
+  if(contentWords<2||recordWordOffset*2!==expectedOffset||
+     expectedOffset+8+byteLength>shp.length)
+   return invalid('Shapefile SHX points outside its corresponding SHP record');
+  if(shape.getUint32(expectedOffset,false)!==i+1||
+     shape.getUint32(expectedOffset+4,false)!==contentWords)
+   return invalid('Shapefile SHX record length or sequence differs from SHP');
+  const recordShape=shape.getInt32(expectedOffset+8,true);
+  if(recordShape!==0&&recordShape!==datasetShape)
+   return invalid('Shapefile record geometry type differs from its layer');
+  expectedOffset+=8+byteLength;
+ }
+ if(expectedOffset!==shp.length)
+  return invalid('Shapefile SHX does not cover all SHP record bytes');
+ for(let i=0;i<count;i++){
+  const flag=dbf[headerLength+i*recordLength];
+  if(flag!==0x20)
+   return invalid('Shapefile DBF contains deleted or invalid record markers');
+ }
+ return {status:'pass',detail:'SHP records, SHX offsets/lengths, DBF rows and geometry types match'};
+}
+
 async function parseZip(bytes,format){
  let zip;
  try{zip=await JSZip.loadAsync(bytes)}
@@ -238,12 +294,15 @@ async function parseZip(bytes,format){
  const shape=a.getInt32(32,true);
  const kinds={1:'point',11:'point',21:'point',8:'point',18:'point',28:'point',3:'line',13:'line',23:'line',5:'polygon',15:'polygon',25:'polygon'};
  const count=b.getUint32(4,true);
- const shxCount=(shx.byteLength-100)/8;
+ const recordIndex=inspectShpRecordIndex(shp,shx,dbf);
  const meta=blank('shp');
  meta.features=count;meta.geometry=[kinds[shape]||'unknown'];
- meta.pointOnly=[1,11,21].includes(shape);
- meta.complete=Number.isInteger(shxCount)&&shxCount===count&&meta.geometry[0]!=='unknown';
- if(!meta.complete)meta.issues.push('Shapefile index, record count or geometry type could not be verified');
+ meta.shpRecordIntegrity=recordIndex.status;
+ meta.pointOnly=recordIndex.status==='pass'&&[1,11,21].includes(shape);
+ meta.complete=recordIndex.status==='pass'&&meta.geometry[0]!=='unknown';
+ if(recordIndex.status==='review')meta.issues.push(recordIndex.detail);
+ if(meta.geometry[0]==='unknown')
+  meta.issues.push('Shapefile geometry type could not be verified');
  const projected=/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(prj);
  meta.crs=!projected&&/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(prj)?'WGS84':'unknown';
  const corners=[a.getFloat64(36,true),a.getFloat64(44,true),a.getFloat64(52,true),a.getFloat64(60,true)];
@@ -269,6 +328,11 @@ export async function createGISQualityReport(input,source,output,target){
  function add(id,status,detail){checks.push({id,status,detail})}
  if(after.issues.length)add('output-structure','review','Output: '+after.issues.join('; '));
  else add('output-structure',after.complete?'pass':'unavailable',after.complete?'Output structure inspected for supported feature types':'Structural inspection was incomplete');
+ if(target==='shp'&&after.shpRecordIntegrity)
+  add('shp-record-integrity',after.shpRecordIntegrity,
+    after.shpRecordIntegrity==='pass'
+      ? 'SHP records, SHX indexes and DBF row extents independently match'
+      : 'Converted Shapefile record/index/DBF structure is inconsistent');
  if(before.features!==null&&after.features!==null&&before.complete&&after.complete){
   add('feature-count',before.features===after.features?'pass':'review',before.features+' input → '+after.features+' output features');
  }else add('feature-count','unavailable','Input/output counts are not directly comparable for these geometries');
@@ -399,7 +463,7 @@ export async function createGISQualityReport(input,source,output,target){
  */
 export function assertNoDetectedCriticalDataLoss(report){
  const errors=(report?.checks||[]).filter(c=>c.status==='review'&&
-   (c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
+   (c.id==='shp-record-integrity'||c.id==='feature-count'||c.id==='coordinate-bounds'||c.id==='point-coordinate-values'||c.id==='complex-geometry-values'||c.id==='gpx-logical-features'||c.id==='gpx-line-geometry'||c.id==='dbf-attribute-values'||c.id==='shp-geojson-attributes'||c.id==='cross-format-attributes'||c.id==='complex-feature-attributes'||c.id==='gpx-timed-track'));
  if(errors.length){
   const e=new Error('Output integrity mismatch: '+errors.map(c=>c.detail).join('; ')+
     '. The generated file was withheld to prevent silent GIS data loss.');
