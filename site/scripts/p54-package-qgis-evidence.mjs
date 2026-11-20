@@ -26,6 +26,14 @@ const required = Object.freeze([
   'browser-evidence.json', 'qgis-desktop-evidence.json',
   'p43-qgis-desktop-map.png'
 ]);
+// Optional Shapefile sidecars are still essential when generated: keep them
+// when present, but do not invent them or fail formats that omit them.
+export const QGIS_REQUIRED_ARTIFACTS = required;
+const optionalCompanions = Object.freeze([
+  'p43-browser-polygon.cpg', 'p43-browser-polygon.qpj',
+  'p43-native-cp1252.qpj',
+  'p43-native-epsg3857.cpg', 'p43-native-epsg3857.qpj'
+]);
 const browserCases = Object.freeze({
   'p53-browser-survey-lines.kml':
     'browser_two_lines_geojson_to_kml_with_attribute_pairing',
@@ -65,7 +73,9 @@ export function packageQgisReleaseEvidence(options = {}) {
   // fixture files. Never recursively archive the runner's working directory.
   const entries = [];
   const bytesByName = new Map();
-  for (const name of required) {
+  const optional = optionalCompanions.filter(name =>
+    fs.existsSync(path.join(source, name)));
+  for (const name of [...required, ...optional]) {
     const file = path.join(source, name);
     const stat = fs.lstatSync(file);
     assert(stat.isFile() && !stat.isSymbolicLink(),
