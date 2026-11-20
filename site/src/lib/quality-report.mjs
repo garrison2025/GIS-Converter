@@ -510,6 +510,12 @@ export async function createGISQualityReport(input,source,output,target){
  // a cross-format certification for a multi-layer archive.
  const multiShp=(source==='shp'&&before.shpLayers>1)||
    (target==='shp'&&after.shpLayers>1);
+ const complexOnly=meta=>Array.isArray(meta.geometry)&&meta.geometry.length>0&&
+  meta.geometry.every(kind=>kind==='line'||kind==='polygon');
+ // P61: only enable multi-layer complex joins when BOTH sides contain
+ // exclusively inspectable line/polygon families. Point/mixed/unknown layers
+ // retain the earlier conservative P60 unavailable boundary.
+ const multiShpComplex=multiShp&&complexOnly(before)&&complexOnly(after);
  const checks=[];
  function add(id,status,detail){checks.push({id,status,detail})}
  if(after.issues.length)add('output-structure','review','Output: '+after.issues.join('; '));
@@ -603,8 +609,8 @@ export async function createGISQualityReport(input,source,output,target){
  // Mixed, unsupported, ambiguous or projected GIS files are NOT certified.
  if(new Set(['geojson','kml','kmz','shp']).has(source)&&
     new Set(['geojson','kml','kmz','shp']).has(target)&&source!==target){
-  const fidelity=multiShp?
-   {status:'unavailable',detail:'Multi-layer Shapefile cross-format vertex comparison has not been independently certified.'}:
+  const fidelity=multiShp&&!multiShpComplex?
+   {status:'unavailable',detail:'Multi-layer SHP geometry comparison is limited to homogeneous 2D WGS84 line/polygon layers.'}:
    before.crs==='WGS84'&&after.crs==='WGS84'?
     await inspectComplexGeometryFidelity(inputBytes,source,output,target):
     {status:'unavailable',detail:'Complex WGS84 geometry comparison requires confirmed geographic CRS on both sides.'};
@@ -618,7 +624,7 @@ export async function createGISQualityReport(input,source,output,target){
   // Skip extra ZIP/SHP/coordinate parsing entirely for large stress inputs.
   // P40's original 4,000-feature geometry gate remains unchanged.
   const insideJoinCap=count=>count===null||(Number.isInteger(count)&&count>0&&count<=300);
-  const result=!multiShp&&!before.pointOnly&&!after.pointOnly&&
+  const result=(!multiShp||multiShpComplex)&&!before.pointOnly&&!after.pointOnly&&
     insideJoinCap(before.features)&&insideJoinCap(after.features)&&
     before.crs==='WGS84'&&after.crs==='WGS84'?
    await inspectComplexFeatureAttributeFidelity(inputBytes,source,output,target):
@@ -655,13 +661,13 @@ export async function createGISQualityReport(input,source,output,target){
      (r.schemaScanLimited?'; schema scan bounded':'')+
      '. These are risk indicators, not evidence of loss or preservation.');
  }
- if(source==='geojson'&&target==='shp'){
+ if(source==='geojson'&&target==='shp'&&!multiShpComplex){
   const fidelity=multiShp?
    {status:'unavailable',detail:'Multi-layer Shapefile DBF values require independent per-layer field association.'}:
    await inspectGeojsonToShpDbfFidelity(inputBytes,output);
   add('dbf-attribute-values',fidelity.status,fidelity.detail);
  }
- if(source==='shp'&&target==='geojson'){
+ if(source==='shp'&&target==='geojson'&&!multiShpComplex){
   // P60: multi-layer point ZIPs can now verify their own unique point/DBF
   // association across all layers. Mixed/duplicate/unsupported geometry
   // stays explicitly unavailable; no positional row pairing or false pass.
