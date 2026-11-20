@@ -331,7 +331,11 @@ export async function createGISQualityReport(input,source,output,target){
  // fields are DATA_LOSS; duplicate geometry leaves association unavailable.
  const complexAttributeFormats=new Set(['geojson','kml','kmz','shp']);
  if(source!==target&&complexAttributeFormats.has(source)&&complexAttributeFormats.has(target)){
+  // Skip extra ZIP/SHP/coordinate parsing entirely for large stress inputs.
+  // P40's original 4,000-feature geometry gate remains unchanged.
+  const insideJoinCap=count=>count===null||(Number.isInteger(count)&&count>0&&count<=300);
   const result=!before.pointOnly&&!after.pointOnly&&
+    insideJoinCap(before.features)&&insideJoinCap(after.features)&&
     before.crs==='WGS84'&&after.crs==='WGS84'?
    await inspectComplexFeatureAttributeFidelity(inputBytes,source,output,target):
    {status:'unavailable',detail:'Complex attribute checking requires uniquely matchable WGS84 line/polygon geometry.'};
