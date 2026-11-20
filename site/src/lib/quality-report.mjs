@@ -199,15 +199,20 @@ function provenDirectKmlPoint(markup){
  const stack=[];
  let direct=0,locatedCoordinates=0,coordinatesStart=-1;
  for(const token of tokens){
-  const name=token[2].split(':').at(-1).toLowerCase();
+  const rawName=token[2];
+  const name=rawName.split(':').at(-1).toLowerCase();
   const closing=token[1]==='/';
   const tail=token[3];
+  // We do not independently resolve XML namespace bindings here. A foreign
+  // <fake:coordinates> is not a valid KML geometry coordinate element, even
+  // when it appears below <Point>. Limit certification to unprefixed KML
+  // elements; namespaced but valid documents remain "unavailable".
+  if((name==='point'&&rawName!=='Point')||
+     (name==='coordinates'&&rawName!=='coordinates'))return false;
   if(closing){
-   if(stack.at(-1)!==name)return false;
-   // Not enough for a Placemark to contain a <Point>: the validated
-   // coordinates must be an actual direct child of THAT Point, rather than
-   // an unrelated <description> or <ExtendedData> payload elsewhere.
-   if(name==='coordinates'&&stack.length===2&&stack[0]==='point'){
+   // XML names are case-sensitive; prefixes must match the opening tag.
+   if(stack.at(-1)?.rawName!==rawName)return false;
+   if(name==='coordinates'&&stack.length===2&&stack[0].rawName==='Point'){
     if(coordinatesStart<0)return false;
     const contents=markup.slice(coordinatesStart,token.index).trim();
     const locations=contents.split(/\s+/).filter(Boolean);
@@ -220,10 +225,11 @@ function provenDirectKmlPoint(markup){
    }
    stack.pop();
   }else{
-   if(name==='point'&&stack.length===0)direct++;
-   if(name==='coordinates'&&stack.length===1&&stack[0]==='point')
+   if(rawName==='Point'&&stack.length===0)direct++;
+   if(rawName==='coordinates'&&stack.length===1&&
+      stack[0].rawName==='Point')
     coordinatesStart=token.index+token[0].length;
-   if(!/\/\s*$/.test(tail))stack.push(name);
+   if(!/\/\s*$/.test(tail))stack.push({rawName});
   }
  }
  return stack.length===0&&direct===1&&locatedCoordinates===1;
