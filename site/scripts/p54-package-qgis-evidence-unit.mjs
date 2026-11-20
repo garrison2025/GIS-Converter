@@ -82,6 +82,8 @@ try{
   assert.throws(()=>packageQgisReleaseEvidence({source,output}),
     /changed after source evidence capture/,
     'Modified original browser bytes must fail closed');
+  assert(!fs.existsSync(output),
+    'A failed recheck must invalidate any prior successful artifact');
   fs.writeFileSync(path.join(source,'p53-browser-survey-lines.kml'),kml);
 
   qgis.status='FAILED';writeJson('qgis-desktop-evidence.json',qgis);
