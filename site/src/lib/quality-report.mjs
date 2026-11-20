@@ -187,6 +187,30 @@ function parseDelimitedCsv(bytes){
  if(good!==rows)meta.issues.push('Some CSV rows lack valid WGS84 coordinates');
  return meta;
 }
+/**
+ * Strict P58-only proof that a simple KML Point is an actual direct child
+ * of each Placemark, not text in CDATA, comments or nested description tags.
+ * Deliberately return false for ambiguous constructs, prefixes or markup.
+ * This checker never copies user XML or coordinate values into a report.
+ */
+function provenDirectKmlPoint(markup){
+ if(/<!--|<!\[CDATA\[|<!DOCTYPE|<!ENTITY/i.test(markup))return false;
+ const tokens=[...markup.matchAll(/<\s*(\/?)\s*([A-Za-z_][\w.:-]*)\b([^<>]*?)>/g)];
+ const stack=[];
+ let direct=0;
+ for(const token of tokens){
+  const name=token[2].split(':').at(-1).toLowerCase();
+  const closing=token[1]==='/';
+  const tail=token[3];
+  if(closing){
+   if(stack.pop()!==name)return false;
+  }else{
+   if(name==='point'&&stack.length===0)direct++;
+   if(!/\/\s*$/.test(tail))stack.push(name);
+  }
+ }
+ return stack.length===0&&direct===1;
+}
 function parseKml(bytes,format='kml'){
  let str;
  try{str=new TextDecoder('utf-8',{fatal:true}).decode(bytes)}
@@ -214,6 +238,8 @@ function parseKml(bytes,format='kml'){
  }
  meta.geometry=[...kinds];meta.bbox=endBox(box);
  meta.pointOnly=valid&&points===placemarks.length&&points>0;
+ meta.knownNonNullGeometries=meta.pointOnly&&
+  placemarks.every(mark=>provenDirectKmlPoint(mark[1]));
  meta.complete=meta.pointOnly;
  if(!meta.complete)meta.issues.push('KML analysis is restricted to one Point coordinate per Placemark; complex KML was not fully inspected');
  return meta;
@@ -348,8 +374,11 @@ async function parseZip(bytes,format){
  meta.shpRecordIntegrity=recordIndex.status;
  meta.shpNullShapes=recordIndex.status==='pass'?recordIndex.nullShapes:null;
  meta.shpXYBounds=xy.status;
+ // Preserve P57 point-only coordinate-bounds comparisons even if an
+ // output contains Null Shape rows. P58 adds a separate critical geometry
+ // loss gate; disabling the older bbox comparison weakens unrelated routes.
  meta.pointOnly=recordIndex.status==='pass'&&xy.status!=='review'&&
-  recordIndex.nullShapes===0&&[1,11,21].includes(shape);
+  [1,11,21].includes(shape);
  meta.complete=recordIndex.status==='pass'&&xy.status!=='review'&&
   meta.geometry[0]!=='unknown';
  if(recordIndex.status==='review')meta.issues.push(recordIndex.detail);
@@ -405,7 +434,9 @@ export async function createGISQualityReport(input,source,output,target){
  if(target==='shp'){
   const sourceNonNullProved=source==='geojson'?
     before.knownNonNullGeometries===true:
-    ['kml','kmz'].includes(source)&&before.pointOnly===true;
+    ['kml','kmz'].includes(source)?
+      before.knownNonNullGeometries===true:
+      ['csv','gpx'].includes(source)&&before.pointOnly===true;
   const comparable=before.complete&&sourceNonNullProved&&
     Number.isInteger(before.features)&&before.features>0&&
     before.features===after.features&&after.shpRecordIntegrity==='pass'&&
