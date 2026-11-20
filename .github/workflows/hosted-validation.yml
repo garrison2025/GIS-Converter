@@ -82,7 +82,14 @@ jobs:
       - name: Install Chromium Firefox and WebKit for real browser and GIS conversion tests
         run: npx playwright install --with-deps chromium firefox webkit
       - name: P53 synthetic-only KML complex line DATA_LOSS diagnostic (non-release probe)
-        run: node scripts/p43-browser-qgis-fixtures.mjs
+        run: |
+          (python3 -m http.server 8784 --directory dist > /tmp/p53-synthetic-diagnostic.log 2>&1 &)
+          for attempt in $(seq 1 50); do
+            if curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null; then break; fi
+            sleep 0.2
+          done
+          curl -fsS http://127.0.0.1:8784/converter/geojson-to-shp/ > /dev/null
+          node scripts/p43-browser-qgis-fixtures.mjs
         continue-on-error: true
       - name: Probe independent cancellable classic Worker running real GDAL
         run: node scripts/isolated-worker-probe.mjs
