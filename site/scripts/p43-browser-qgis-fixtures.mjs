@@ -61,7 +61,15 @@ async function convert(page,slug,input,extension){
  await page.locator('#file').setInputFiles(input);
  await page.locator('#submit').click();
  try{await page.locator('#result').waitFor({state:'visible',timeout:120000})}
- catch{throw Error('GIS browser converter failed for '+slug+': '+await page.locator('#error').textContent())}
+ catch{
+  // P53 synthetic-fixture-only diagnostic: capture the worker's aggregate
+  // integrity-check reason, never user files or private GIS properties.
+  const internal=await page.evaluate(()=>
+   (window.__p53WorkerIntegrityErrors||[]).slice(-1)[0]||'no worker integrity detail');
+  throw Error('GIS browser converter failed for '+slug+': '+
+   (await page.locator('#error').textContent())+
+   ' / synthetic fixture integrity detail: '+internal.slice(0,1600));
+ }
  const [dl]=await Promise.all([page.waitForEvent('download',{timeout:25000}),page.locator('#download').click()]);
  check(dl.suggestedFilename().endsWith(extension),'Wrong converter file extension');
  const bytes=fs.readFileSync(await dl.path());
@@ -88,6 +96,21 @@ try{
  ]);
  browser=await chromium.launch({headless:true,args:['--no-sandbox']});
  const page=await browser.newPage({acceptDownloads:true});
+ // Synthetic GIS cases only. Listen to the actual isolated worker failure
+ // *inside* Playwright CI; production error UI remains intentionally generic.
+ await page.addInitScript(()=>{
+  const NativeWorker=window.Worker;
+  window.__p53WorkerIntegrityErrors=[];
+  window.Worker=class extends NativeWorker{
+   constructor(...args){
+    super(...args);
+    this.addEventListener('message',event=>{
+     if(event.data?.type==='error')
+      window.__p53WorkerIntegrityErrors.push(String(event.data.error||'unknown'));
+    });
+   }
+  };
+ });
  const polygon=await convert(page,'geojson-to-shp',
   {name:'p43-polygon.geojson',mimeType:'application/geo+json',buffer:Buffer.from(source)},'.zip');
  await unzipShape(polygon.bytes,'p43-browser-polygon');
