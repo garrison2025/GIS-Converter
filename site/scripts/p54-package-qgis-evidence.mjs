@@ -74,6 +74,11 @@ export function packageQgisReleaseEvidence(options = {}) {
     item.name === 'QGIS_actual_Qt_map_canvas_rendered_and_screenshot'),
     'Real Qt map canvas evidence missing');
   assert(Array.isArray(browser.cases), 'Browser GIS cases are absent');
+  assert.equal(qgis.hashAlgorithm, 'SHA-256',
+    'Independent QGIS accepted source checksums are missing');
+  assert(qgis.acceptedFileSHA256 &&
+    Object.getPrototypeOf(qgis.acceptedFileSHA256) === Object.prototype,
+    'Independent QGIS has not bound source bytes to its successful checks');
 
   // Before creating any public artifact, read only explicitly named synthetic
   // fixture files. Never recursively archive the runner's working directory.
@@ -90,8 +95,13 @@ export function packageQgisReleaseEvidence(options = {}) {
       'Synthetic QGIS fixture outside safe size bounds: ' + name);
     const bytes = fs.readFileSync(file);
     bytesByName.set(name, bytes);
+    const digest = sha(bytes);
+    if (name !== 'qgis-desktop-evidence.json') {
+      assert.equal(qgis.acceptedFileSHA256[name], digest,
+        'QGIS accepted dataset changed before archival: ' + name);
+    }
     entries.push({file: 'qgis-fixtures/' + name, bytes: bytes.length,
-      sha256: sha(bytes)});
+      sha256: digest});
 
     if (name.endsWith('.shp') || name.endsWith('.shx')) {
       assert(bytes.length >= 100 && bytes.readUInt32BE(0) === 9994,
@@ -108,6 +118,11 @@ export function packageQgisReleaseEvidence(options = {}) {
         'Invalid browser KML file');
     }
   }
+  const acceptedFiles=Object.keys(qgis.acceptedFileSHA256).sort();
+  const expectedFiles=[...bytesByName.keys()]
+    .filter(name=>name!=='qgis-desktop-evidence.json').sort();
+  assert.deepEqual(acceptedFiles,expectedFiles,
+    'QGIS acceptance set differs from the archived source file set');
   for (const [file, caseName] of Object.entries(browserCases)) {
     const matching = browser.cases.filter(item => item.name === caseName);
     assert.equal(matching.length, 1, 'Required browser case missing: ' + caseName);
@@ -136,6 +151,7 @@ export function packageQgisReleaseEvidence(options = {}) {
     manualQgisInteraction: 'NOT_TESTED',
     physicalDevice: 'NOT_TESTED',
     digest: 'SHA-256',
+    qgisByteBound: true,
     files: entries
   };
   fs.writeFileSync(path.join(output, 'manifest.json'),
