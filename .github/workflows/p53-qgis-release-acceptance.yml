@@ -5,6 +5,7 @@ on:
       - 'dev/p53-*'
       - 'dev/p54-*'
       - 'dev/p55-*'
+      - 'dev/p56-*'
       - main
     paths:
       - site/scripts/p43-browser-qgis-fixtures.mjs
@@ -15,6 +16,8 @@ on:
       - site/P53_RELEASE_SIGNOFF.md
       - site/src/lib/kml-extended-data-repair.mjs
       - site/src/lib/gdal-matrix.mjs
+      - site/src/lib/quality-report.mjs
+      - site/scripts/quality-report-smoke.mjs
       - site/scripts/p53-kml-extended-repair-unit.mjs
       - site/.p53-qgis-release-public-acceptance
       - .github/workflows/p53-qgis-release-acceptance.yml
@@ -67,6 +70,8 @@ jobs:
 
       - name: Install pinned npm dependencies
         run: npm ci --no-audit --no-fund
+      - name: P56 fail closed on SHX record-offset, length and DBF corruption
+        run: npm run smoke:quality-report
       - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
         run: npm run smoke:kml-extended-repair
       - name: Cache Playwright 1.57 three-browser binaries
