@@ -50,6 +50,12 @@ const readJson = file => JSON.parse(fs.readFileSync(file, 'utf8'));
 export function packageQgisReleaseEvidence(options = {}) {
   const source = path.resolve(options.source || 'p43-qgis-fixtures');
   const output = path.resolve(options.output || 'p54-qgis-release-artifacts');
+  assert(output !== source && !output.startsWith(source + path.sep) &&
+    !source.startsWith(output + path.sep),
+    'Artifact destination must be separate from synthetic source');
+  // In a retry, a failed validation must not leave a previous green artifact
+  // accessible under the same destination.
+  fs.rmSync(output, {recursive: true, force: true});
   const browser = readJson(path.join(source, 'browser-evidence.json'));
   const qgis = readJson(path.join(source, 'qgis-desktop-evidence.json'));
 
@@ -115,8 +121,7 @@ export function packageQgisReleaseEvidence(options = {}) {
     .equals(Buffer.from([137,80,78,71,13,10,26,10])),
     'QGIS Qt screenshot is not PNG');
 
-  // Write output only after all checks pass. Remove stale output from retries.
-  fs.rmSync(output, {recursive: true, force: true});
+  // Write output only after all checks pass.
   const targetDir = path.join(output, 'qgis-fixtures');
   fs.mkdirSync(targetDir, {recursive: true});
   for (const [name, bytes] of bytesByName) {
