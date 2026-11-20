@@ -40,6 +40,8 @@ jobs:
         run: node scripts/p58-null-shape-fidelity-unit.mjs
       - name: P59 verify all Shapefile ZIP layers not only the first file
         run: node scripts/p59-shp-multilayer-integrity-unit.mjs
+      - name: P60 verify cross-layer SHP Point DBF identity by unique geometry
+        run: node scripts/p60-multilayer-point-dbf-unit.mjs
       - name: P34 validate free mini-batch ZIP safety limits and per-file report manifest
         run: npm run smoke:mini-batch-unit
       - name: P35 verify bounded WGS84 output vector sample, polygon holes and CRS rejection

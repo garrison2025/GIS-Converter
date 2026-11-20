@@ -8,6 +8,7 @@ import {inspectPointCoordinateFidelity} from './point-coordinate-fidelity.mjs';
 import {inspectComplexGeometryFidelity} from './complex-geometry-fidelity.mjs';
 import {inspectComplexFeatureAttributeFidelity} from './complex-feature-attribute-fidelity.mjs';
 import {inspectShpXYBounds} from './shp-xy-bounds.mjs';
+import {inspectMultiLayerPointShpGeojsonFidelity} from './multilayer-shp-geojson-fidelity.mjs';
 
 const ZIP_LIMIT=36*1024*1024;
 const eq=(a,b,tol=0.00015)=>Math.abs(a-b)<=tol;
@@ -661,8 +662,15 @@ export async function createGISQualityReport(input,source,output,target){
   add('dbf-attribute-values',fidelity.status,fidelity.detail);
  }
  if(source==='shp'&&target==='geojson'){
-  const fidelity=multiShp?
-   {status:'unavailable',detail:'Multi-layer Shapefile-to-GeoJSON fields require independent per-layer association.'}:
+  // P60: multi-layer point ZIPs can now verify their own unique point/DBF
+  // association across all layers. Mixed/duplicate/unsupported geometry
+  // stays explicitly unavailable; no positional row pairing or false pass.
+  const fidelity=before.shpLayers>1?
+   before.shpRecordIntegrity==='pass'&&before.shpXYBounds==='pass'&&
+    before.crs==='WGS84'&&before.pointOnly&&after.pointOnly&&
+    after.crs==='WGS84'?
+     await inspectMultiLayerPointShpGeojsonFidelity(inputBytes,output):
+     {status:'unavailable',detail:'Multi-layer Shapefile point fields require verified WGS84 XY and unique comparable source/output geometries.'}:
    await inspectShpToGeojsonDbfFidelity(inputBytes,output);
   add('shp-geojson-attributes',fidelity.status,fidelity.detail);
  }
