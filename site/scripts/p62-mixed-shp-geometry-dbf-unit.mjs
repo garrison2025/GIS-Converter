@@ -310,6 +310,31 @@ let tests=0;
  assert.throws(()=>assertNoDetectedCriticalDataLoss(r),{code:'DATA_LOSS'});
  tests++;
 }
+{
+ // A single PolyLine component can be represented as either a LineString
+ // or one-part MultiLineString, and a Polygon with holes as a singleton
+ // MultiPolygon. These are equivalent ESRI 2D SHP representations.
+ const f=mixedFeatures();
+ f[1].geometry={type:'MultiLineString',coordinates:[DEMO_LINE]};
+ f[2].geometry={type:'MultiPolygon',coordinates:[DEMO_POLYGON]};
+ const r=await run(packed,'shp',geojson(f),'geojson');
+ assert.equal(check(r,'complex-geometry-values'),'pass',
+  'Singleton MultiLineString/MultiPolygon output must not be false DATA_LOSS');
+ assert.equal(check(r,'complex-feature-attributes'),'pass');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+ tests++;
+}
+{
+ const f=mixedFeatures();
+ f[1].geometry={type:'MultiLineString',coordinates:[DEMO_LINE]};
+ f[2].geometry={type:'MultiPolygon',coordinates:[DEMO_POLYGON]};
+ const r=await run(geojson(f),'geojson',packed,'shp');
+ assert.equal(check(r,'complex-geometry-values'),'pass',
+  'Singleton Multi* GeoJSON input is losslessly represented by SHP PolyLine/Polygon');
+ assert.equal(check(r,'complex-feature-attributes'),'pass');
+ assert.equal(assertNoDetectedCriticalDataLoss(r),true);
+ tests++;
+}
 console.log('P62_MIXED_MULTI_LAYER_SHP PASSED '+tests+
  ' real-binary cases: three-family ZIP both directions, reordering, Point/Line/Polygon loss,'+
  ' unique DBF association, duplicate Point, family histogram, Z/CRS/CPG unknown, deleted'+
