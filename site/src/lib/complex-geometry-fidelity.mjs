@@ -150,74 +150,116 @@ function kml(text,state){
 async function shapefile(bytes,state){
  const zip=await JSZip.loadAsync(bytes);
  const files=Object.keys(zip.files).filter(n=>!zip.files[n].dir);
- if(files.length>32)invalid('Too many SHP archive entries for independent inspection');
- const shpNames=files.filter(n=>n.toLowerCase().endsWith('.shp'));
- if(shpNames.length!==1)invalid('Expected exactly one SHP layer');
- const name=shpNames[0],stem=name.slice(0,-4).toLowerCase();
- const match=ext=>files.filter(n=>n.toLowerCase()===stem+'.'+ext);
- const prj=match('prj'),shx=match('shx');
- if(prj.length!==1||shx.length!==1)invalid('Matching SHP projection/index sidecars unavailable');
- const pFile=zip.file(prj[0]),xFile=zip.file(shx[0]),sFile=zip.file(name);
- if([pFile,xFile,sFile].some(f=>(f?._data?.uncompressedSize??Infinity)>MAX_BYTES)||
-  [pFile,xFile,sFile].reduce((n,f)=>n+(f?._data?.uncompressedSize??Infinity),0)>MAX_BYTES)
-  invalid('SHP sidecars exceed bounded total inflated size');
- const projection=await pFile.async('string');
- if(/PROJCS\s*\[|PROJCRS\s*\[|PROJECTEDCRS\s*\[/i.test(projection)||
-  !/WGS[\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(projection))invalid('SHP is not confirmed WGS84');
- const [raw,index]=await Promise.all([sFile.async('uint8array'),xFile.async('uint8array')]);
- if(raw.length<100||index.length<100||index.length%2!==0)invalid('Invalid SHP/SHX header');
- const view=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
- const iv=new DataView(index.buffer,index.byteOffset,index.byteLength);
- if(view.getInt32(0,false)!==9994||iv.getInt32(0,false)!==9994||
-  view.getInt32(28,true)!==1000||view.getInt32(24,false)*2!==raw.length||
-  iv.getInt32(24,false)*2!==index.length||((index.length-100)%8)!==0)
-  invalid('SHP/SHX structural mismatch');
- const family=view.getInt32(32,true);
- if(family!==3&&family!==5)invalid('P40 verifies 2D SHP PolyLine or Polygon only');
- const records=[];let offset=100,n=0;
- while(offset+8<=raw.length){
-  if(++n>MAX_FEATURES)invalid('SHP record count exceeds bound');
-  const words=view.getInt32(offset+4,false),end=offset+8+words*2;
-  if(words<2||end>raw.length||offset+12>end)invalid('Malformed SHP record length');
-  if(index.length<100+n*8||
-   iv.getInt32(100+(n-1)*8,false)*2!==offset||
-   iv.getInt32(104+(n-1)*8,false)!==words)
-   invalid('SHP/SHX index mismatch');
-  const type=view.getInt32(offset+8,true);
-  if(type!==family||end-offset<52)invalid('Unexpected SHP geometry/null record');
-  const parts=view.getInt32(offset+44,true),points=view.getInt32(offset+48,true);
-  if(parts<1||parts>500||points<2||state.vertices+points>MAX_VERTICES||
-   offset+52+parts*4+points*16>end)invalid('Malformed SHP part/point lengths');
-  const starts=[];
-  for(let i=0;i<parts;i++)starts.push(view.getInt32(offset+52+i*4,true));
-  starts.push(points);
-  if(starts[0]!==0||starts.some((x,i)=>i&&x<=starts[i-1]))invalid('SHP part indexes unordered');
-  const xy=[];
-  const base=offset+52+parts*4;
-  for(let j=0;j<points;j++)xy.push(pos(view.getFloat64(base+j*16,true),
-   view.getFloat64(base+j*16+8,true),state));
-  const components=[];
-  for(let i=0;i<parts;i++)components.push(xy.slice(starts[i],starts[i+1]));
-  if(family===3){
-   if(components.some(c=>c.length<2))invalid('SHP line segment too short');
-   records.push({type:components.length===1?'LineString':'MultiLineString',
-    coordinates:components.length===1?components[0]:components});
-  }else{
-   const polygons=[];let current=null;
-   for(const component of components){
-    if(component.length<4||!samePoint(component[0],component.at(-1),0))
-     invalid('Unclosed SHP ring');
-    const area=signedArea(component);
-    if(Math.abs(area)<=ANGLE_ZERO)invalid('Degenerate SHP polygon');
-    if(area<0){current=[component];polygons.push(current)}
-    else{if(!current)invalid('SHP hole without an outer ring');current.push(component)}
-   }
-   records.push({type:polygons.length===1?'Polygon':'MultiPolygon',
-    coordinates:polygons.length===1?polygons[0]:polygons});
-  }
-  offset=end;
+ if(files.length>48)invalid('Too many SHP archive entries for independent inspection');
+ const related=/\\.(?:shp|shx|dbf|prj|cpg)$/i,components=new Map();
+ for(const name of files){
+  if(!related.test(name))continue;
+  const key=name.toLowerCase();
+  if(components.has(key))invalid('Ambiguous case-insensitive SHP component names');
+  components.set(key,zip.file(name));
  }
- if(offset!==raw.length||(index.length-100)/8!==n)invalid('SHP record/SHX count mismatch');
+ const stems=[...components.keys()].filter(n=>n.endsWith('.shp'))
+  .map(n=>n.slice(0,-4)).sort();
+ if(!stems.length||stems.length>8)invalid('SHP layer count outside independent inspection bounds');
+ const known=new Set(stems);
+ for(const key of components.keys()){
+  const stem=key.replace(/\\.(?:shp|shx|dbf|prj|cpg)$/,'');
+  if(!known.has(stem))invalid('Orphan Shapefile sidecar');
+ }
+ let inflated=0;
+ for(const file of components.values()){
+  const size=file?._data?.uncompressedSize;
+  if(!Number.isFinite(size)||size<0)invalid('Unverified SHP archive member size');
+  inflated+=size;
+  if(inflated>MAX_BYTES)invalid('Combined SHP layers exceed independent inspection limit');
+ }
+ const records=[];
+ for(const stem of stems){
+  const shpFile=components.get(stem+'.shp'),shxFile=components.get(stem+'.shx'),
+   dbfFile=components.get(stem+'.dbf'),prjFile=components.get(stem+'.prj');
+  if(!shpFile||!shxFile||!dbfFile||!prjFile)
+   invalid('A SHP layer is missing SHP/SHX/DBF/PRJ');
+  const [raw,index,dbf,projection]=await Promise.all([
+   shpFile.async('uint8array'),shxFile.async('uint8array'),
+   dbfFile.async('uint8array'),prjFile.async('string')
+  ]);
+  if(/PROJCS\\s*\\[|PROJCRS\\s*\\[|PROJECTEDCRS\\s*\\[/i.test(projection)||
+    !/WGS[\\s_-]*(?:84|1984)|GCS_WGS_1984/i.test(projection))
+   invalid('SHP layer is not confirmed WGS84');
+  if(raw.length<100||index.length<100||raw.length%2||index.length%2||
+    (index.length-100)%8)invalid('Invalid SHP/SHX header or index alignment');
+  const view=new DataView(raw.buffer,raw.byteOffset,raw.byteLength);
+  const iv=new DataView(index.buffer,index.byteOffset,index.byteLength);
+  if(view.getUint32(0,false)!==9994||iv.getUint32(0,false)!==9994||
+   view.getUint32(28,true)!==1000||iv.getUint32(28,true)!==1000||
+   view.getUint32(24,false)*2!==raw.length||
+   iv.getUint32(24,false)*2!==index.length)
+   invalid('SHP/SHX structural mismatch');
+  const family=view.getInt32(32,true),indexCount=(index.length-100)/8;
+  if((family!==3&&family!==5)||iv.getInt32(32,true)!==family)
+   invalid('Only 2D WGS84 PolyLine and Polygon layers are supported');
+  if(dbf.length<33)invalid('SHP layer DBF header is truncated');
+  const dv=new DataView(dbf.buffer,dbf.byteOffset,dbf.byteLength);
+  const dbfCount=dv.getUint32(4,true),headerLength=dv.getUint16(8,true),
+   recordLength=dv.getUint16(10,true);
+  if(dbfCount!==indexCount||headerLength<33||headerLength>dbf.length||
+   recordLength<1||dbf[headerLength-1]!==0x0d||
+   headerLength+dbfCount*recordLength>dbf.length)
+   invalid('SHP layer DBF rows do not match its SHX records');
+  let offset=100,n=0;
+  while(offset+8<=raw.length){
+   if(records.length>=MAX_FEATURES)invalid('SHP feature count exceeds inspection bound');
+   const words=view.getUint32(offset+4,false),end=offset+8+words*2;
+   if(words<2||end>raw.length||end<offset||offset+12>end)
+    invalid('Malformed SHP record length');
+   const ix=100+n*8;
+   if(ix+8>index.length||iv.getUint32(ix,false)*2!==offset||
+    iv.getUint32(ix+4,false)!==words||view.getUint32(offset,false)!==n+1)
+    invalid('SHP/SHX record offset, length or sequence mismatch');
+   const type=view.getInt32(offset+8,true);
+   if(type!==family||end-offset<52)
+    invalid('Unexpected SHP geometry family or Null Shape record');
+   const parts=view.getInt32(offset+44,true),points=view.getInt32(offset+48,true);
+   const pointStart=offset+52+parts*4;
+   if(parts<1||parts>500||points<2||state.vertices+points>MAX_VERTICES||
+    pointStart+points*16!==end)
+    invalid('Malformed SHP part/point lengths');
+   const starts=[];
+   for(let i=0;i<parts;i++)starts.push(view.getInt32(offset+52+i*4,true));
+   starts.push(points);
+   if(starts[0]!==0||starts.some((x,i)=>i&&x<=starts[i-1]))
+    invalid('SHP part indexes unordered');
+   const xy=[];
+   for(let j=0;j<points;j++)
+    xy.push(pos(view.getFloat64(pointStart+j*16,true),
+     view.getFloat64(pointStart+j*16+8,true),state));
+   const componentsForRecord=[];
+   for(let i=0;i<parts;i++)
+    componentsForRecord.push(xy.slice(starts[i],starts[i+1]));
+   if(family===3){
+    if(componentsForRecord.some(c=>c.length<2))
+     invalid('SHP line segment too short');
+    records.push({type:componentsForRecord.length===1?'LineString':'MultiLineString',
+     coordinates:componentsForRecord.length===1?componentsForRecord[0]:componentsForRecord});
+   }else{
+    const polygons=[];let current=null;
+    for(const component of componentsForRecord){
+     if(component.length<4||!samePoint(component[0],component.at(-1),0))
+      invalid('Unclosed SHP polygon ring');
+     const area=signedArea(component);
+     if(Math.abs(area)<=ANGLE_ZERO)invalid('Degenerate SHP polygon ring');
+     if(area<0){current=[component];polygons.push(current)}
+     else{if(!current)invalid('SHP hole without an outer ring');current.push(component)}
+    }
+    records.push({type:polygons.length===1?'Polygon':'MultiPolygon',
+     coordinates:polygons.length===1?polygons[0]:polygons});
+   }
+   state.vertices+=points;
+   offset=end;n++;
+  }
+  if(offset!==raw.length||n!==indexCount)
+   invalid('SHP record/SHX count mismatch');
+ }
  return checkFeatures(records);
 }
 function normBBox(feature){
