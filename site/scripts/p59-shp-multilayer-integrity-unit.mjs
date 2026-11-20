@@ -76,8 +76,12 @@ let tests=0;
  assert.equal(status(report,'shp-record-integrity'),'pass');
  assert.equal(status(report,'shp-xy-bounds'),'pass');
  assert.equal(status(report,'feature-count'),'pass');
- assert.equal(status(report,'complex-geometry-values'),'unavailable');
- assert.equal(status(report,'dbf-attribute-values'),'unavailable');
+ assert.equal(status(report,'complex-geometry-values'),'pass',
+  'P62 now compares the independently verified Point/Line layers');
+ assert.equal(status(report,'complex-feature-attributes'),'pass',
+  'P62 links GeoJSON Code attributes to verified Point/Line layer rows');
+ assert.equal(status(report,'dbf-attribute-values'),undefined,
+  'P62 uses the geometry-linked multi-layer attribute guard instead');
  assert.equal(assertNoDetectedCriticalDataLoss(report),true);
  tests++;
 }
