@@ -209,7 +209,10 @@ for(const fake of [
  '<!-- <Point><coordinates>116.5,40</coordinates></Point> -->',
  '<description><Point><coordinates>116.5,40</coordinates></Point></description>',
  '<Point/><description><coordinates>116.5,40</coordinates></description>',
- '<Point/><ExtendedData><fake:coordinates>116.5,40</fake:coordinates></ExtendedData>'
+ '<Point/><ExtendedData><fake:coordinates>116.5,40</fake:coordinates></ExtendedData>',
+ '<Point><fake:coordinates xmlns:fake="urn:not-kml">116.5,40</fake:coordinates></Point>',
+ '<fake:Point xmlns:fake="urn:not-kml"><coordinates>116.5,40</coordinates></fake:Point>',
+ '<Point><coordinates xmlns="urn:not-kml">116.5,40</coordinates></Point>'
 ]){
  const good=([x,y])=>'<Placemark><Point><coordinates>'+
   x+','+y+'</coordinates></Point></Placemark>';
