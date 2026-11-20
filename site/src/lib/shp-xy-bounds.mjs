@@ -39,7 +39,7 @@ export function inspectShpXYBounds(shp,shx){
  if(!SUPPORTED.has(type))
   return unavailable('Shapefile XY bounds cannot be independently inspected for this geometry type');
  const global=emptyBox();
- let vertices=0;
+ let vertices=0, scanBudgetExceeded=false;
  const count=(shx.byteLength-100)/8;
  for(let i=0;i<count;i++){
   const index=100+i*8;
@@ -55,8 +55,13 @@ export function inspectShpXYBounds(shp,shx){
   const local=emptyBox();
   if(POINT.has(type)){
    if(size<20)return review('Shapefile point record omits its XY ordinates');
-   if(++vertices>MAX_VERTICES)
-    return unavailable('Shapefile XY vertex limit reached before full verification');
+   // Even after the optional coordinate-scan cap, check every later record's
+   // indexed byte extent and shape metadata before returning unavailable.
+   if(scanBudgetExceeded||vertices>=MAX_VERTICES){
+    scanBudgetExceeded=true;
+    continue;
+   }
+   vertices++;
    if(!extend(local,s.getFloat64(start+4,true),s.getFloat64(start+12,true)))
     return review('Shapefile point record contains non-finite XY ordinates');
   }else{
@@ -84,8 +89,10 @@ export function inspectShpXYBounds(shp,shx){
      last=offset;
     }
    }
-   if(vertices+nPoints>MAX_VERTICES)
-    return unavailable('Shapefile XY vertex limit reached before full verification');
+   if(scanBudgetExceeded||vertices+nPoints>MAX_VERTICES){
+    scanBudgetExceeded=true;
+    continue; // Still validate every later record's bounds and part indexes.
+   }
    for(let j=0;j<nPoints;j++){
     const p=pointStart+16*j;
     if(!extend(local,s.getFloat64(p,true),s.getFloat64(p+8,true)))
@@ -98,6 +105,8 @@ export function inspectShpXYBounds(shp,shx){
   extend(global,local[0],local[1]);
   extend(global,local[2],local[3]);
  }
+ if(scanBudgetExceeded)
+  return unavailable('Shapefile XY vertex limit reached before full verification');
  if(!vertices)
   return unavailable('Shapefile has no non-null XY geometry to verify');
  if(!sameBox(s,36,global)||!sameBox(x,36,global))
