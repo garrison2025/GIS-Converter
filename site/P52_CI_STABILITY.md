@@ -15,6 +15,8 @@
 4. Add `npm run smoke:ci-policy` to verify the concurrency expression, versioned caches, no loss of the three browser engines, all 19 public conversion routes, multi-browser output previews, noindex release gates, and P51 geometry/attribute integrity checks.
 5. Add a one-shot, exact-main-SHA P52 public acceptance workflow. Only a new marker on main triggers it automatically. It runs no deploy command and cannot enable paid plans, SEO indexing, remote file uploads, or change any of the 19 conversion routes.
 
+- P43 low-memory browser test isolation: after the real 3,000-polygon Chromium stress and active-worker cancel/retry checks, explicitly close the Chromium context and **browser process** before independently launching WebKit. This prevents the second browser from competing with a large retained Chromium process tree. All P43 fixtures, test assertions and data-loss gates are preserved; it is a runner-fixture isolation fix, not a GIS conversion change.
+
 ## Important limitation
 
 Caching binary browsers speeds **repeat runs when the cache is available**; it does not cache system APT dependencies, eliminate first-run downloads, or promise a fixed duration. Playwright is still installed with `--with-deps` to avoid missing native libraries. The CI suite remains deliberately substantive and may be slower during GitHub runner/network incidents.
