@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'dev/p53-*'
+      - 'dev/p54-*'
       - main
     paths:
       - site/scripts/p43-browser-qgis-fixtures.mjs
