@@ -89,7 +89,16 @@ function geojson(text,state){
  return checkFeatures(data.features.map(f=>{
   const g=f?.geometry;
   if(!g||typeof g.type!=='string')invalid('Empty/unsupported GeoJSON geometry');
-  return {type:g.type,coordinates:checkShape(g.type,g.coordinates,state)};
+  const coordinates=checkShape(g.type,g.coordinates,state);
+  // ESRI Shapefile PolyLine/Polygon has no single-part Multi* distinction:
+  // GeoJSON's one-component MultiLineString/MultiPolygon is losslessly
+  // representable as LineString/Polygon. Normalize ONLY for P62 mixed joins.
+  // P40/P51 legacy geometry rules and multipart topology remain unchanged.
+  if(state.allowMixedPoints&&g.type==='MultiLineString'&&coordinates.length===1)
+   return {type:'LineString',coordinates:coordinates[0]};
+  if(state.allowMixedPoints&&g.type==='MultiPolygon'&&coordinates.length===1)
+   return {type:'Polygon',coordinates:coordinates[0]};
+  return {type:g.type,coordinates};
  }));
 }
 function checkFeatures(features){
