@@ -20,8 +20,8 @@ for(const [name,w] of [['hosted',hosted],['p50',p50],['p51',p51],['p52',p52]]){
   name+' removes required Chromium Firefox or WebKit');
  assert.match(w,/actions\/cache@v4/,name+' omits cache action');
 }
-assert(hosted.includes("group: gis-hosted-${{ github.ref }}"),
- 'Keep one hosted lane per git ref');
+assert(hosted.includes("group: gis-hosted-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}"),
+ 'Keep one dev lane per ref, unique main SHA lane');
 assert(hosted.includes("cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.event_name == 'push' }}"),
  'Only superseded dev push runs may be canceled, never main');
 for(const command of [
