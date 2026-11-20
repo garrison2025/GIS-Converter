@@ -26,7 +26,7 @@ assert(qgis.includes("'physicalDevice': 'NOT_TESTED'"),
  'Automated Qt cannot declare physical phone testing passed');
 assert(mobile.includes("physicalDevice:'NOT_TESTED'"),
  'Playwright device simulation cannot be called a physical test');
-for(const s of ['qgis python3-qgis gdal-bin xvfb',
+for(const s of ['python3-qgis gdal-bin xvfb',
  'QT_QPA_PLATFORM: offscreen','smoke:qgis-browser-fixtures',
  'p43-qgis-qt-gui.py','smoke:mobile-resilience',
  'GIS_EXPECTED_COMMIT:','smoke:live-release',
@@ -34,6 +34,9 @@ for(const s of ['qgis python3-qgis gdal-bin xvfb',
  'site/.p53-qgis-release-public-acceptance']){
  assert(workflow.includes(s),'P53 workflow omits '+s);
 }
+assert(workflow.includes('timeout 900s')&&workflow.includes('APT_QGIS_DONE')&&
+ workflow.includes('QgsMapCanvas'),
+ 'QGIS Qt install must be bounded and independently verified');
 assert(workflow.includes('run: npm run smoke:release-signoff'),
  'P53 CI must enforce release evidence boundary');
 assert(workflow.includes('branches:')&&workflow.includes('main'),

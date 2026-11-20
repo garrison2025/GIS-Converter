@@ -38,11 +38,26 @@ jobs:
           node-version: 22.23.4
       - name: Verify automatic QGIS versus manual release signoff policy
         run: npm run smoke:release-signoff
-      - name: Install installed QGIS desktop Qt PyQGIS and native GDAL
+      - name: Install bounded native PyQGIS Qt map canvas and GDAL (not full QGIS desktop)
+        timeout-minutes: 34
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends qgis python3-qgis gdal-bin xvfb
-          /usr/bin/python3 -c "from qgis.core import QgsApplication; from qgis.gui import QgsMapCanvas; print('PyQGIS Qt desktop canvas available')"
+          # Full QGIS Desktop pulls multimedia/webkit and 100+ GUI packages;
+          # previous jobs spent 30-50 minutes on apt network downloads.
+          # python3-qgis provides the actual QgsMapCanvas and OGR provider.
+          # Keep the independent Qt widget and all geometry/attribute gates.
+          export DEBIAN_FRONTEND=noninteractive
+          APT_OPTS=(-o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          echo "APT_QGIS_BEGIN $(date -u +%FT%TZ)"
+          if ! timeout 900s sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends python3-qgis gdal-bin xvfb; then
+            echo "APT_QGIS_INITIAL_INSTALL_FAILED: refresh bounded Ubuntu package indexes once"
+            timeout 140s sudo apt-get "${APT_OPTS[@]}" update
+            timeout 900s sudo apt-get "${APT_OPTS[@]}" install -y --no-install-recommends python3-qgis gdal-bin xvfb
+          fi
+          echo "APT_QGIS_DONE $(date -u +%FT%TZ)"
+          /usr/bin/python3 -c "from qgis.core import Qgis, QgsApplication; from qgis.gui import QgsMapCanvas; print('REAL_PYQGIS_QT_CANVAS', Qgis.QGIS_VERSION)"
+          ogr2ogr --version
+          dpkg-query -W python3-qgis libqgis-gui* gdal-bin
+
       - name: Install pinned npm dependencies
         run: npm ci --no-audit --no-fund
       - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
