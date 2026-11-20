@@ -235,5 +235,23 @@ for(const fake of [
  assert.equal(check(kmzReport,'shp-null-shape-loss').status,'unavailable');
  passed++;
 }
+{
+ const point=([x,y])=>'<Placemark><Point><coordinates>'+
+  x+','+y+'</coordinates></Point></Placemark>';
+ const base='<Document>'+pts.map(point).join('')+'</Document>';
+ const good='<kml xmlns="http://www.opengis.net/kml/2.2">'+base+'</kml>';
+ const foreign='<kml xmlns="urn:not-kml">'+base+'</kml>';
+ const yes=await createGISQualityReport(
+  new File([good],'known-kml.kml'),'kml',await makeShp([1]),'shp');
+ assert.equal(yes.input.knownNonNullGeometries,true,
+  'Standard unprefixed KML default namespace permits direct Point proof');
+ assert.equal(check(yes,'shp-null-shape-loss').status,'review');
+ const no=await createGISQualityReport(
+  new File([foreign],'foreign-root.kml'),'kml',await makeShp([1]),'shp');
+ assert.equal(no.input.knownNonNullGeometries,false,
+  'Foreign default namespace must not create an unsupported geometry guarantee');
+ assert.equal(check(no,'shp-null-shape-loss').status,'unavailable');
+ passed++;
+}
 console.log('P58_NULL_SHAPE_FIDELITY PASSED: '+passed+
  ' complete and incomplete GeoJSON/KML inputs, matching-count/bbox middle geometry deletion, all-null output, malformed null shape and critical DATA_LOSS');
