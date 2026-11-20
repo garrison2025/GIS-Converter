@@ -328,11 +328,13 @@ export async function createGISQualityReport(input,source,output,target){
  function add(id,status,detail){checks.push({id,status,detail})}
  if(after.issues.length)add('output-structure','review','Output: '+after.issues.join('; '));
  else add('output-structure',after.complete?'pass':'unavailable',after.complete?'Output structure inspected for supported feature types':'Structural inspection was incomplete');
- if(target==='shp'&&after.shpRecordIntegrity)
-  add('shp-record-integrity',after.shpRecordIntegrity,
+ // Treat unreadable/truncated ZIP output as a critical SHP integrity failure
+ // too. A missing result must never be interpreted as "not checked".
+ if(target==='shp')
+  add('shp-record-integrity',after.shpRecordIntegrity==='pass'?'pass':'review',
     after.shpRecordIntegrity==='pass'
       ? 'SHP records, SHX indexes and DBF row extents independently match'
-      : 'Converted Shapefile record/index/DBF structure is inconsistent');
+      : 'Converted Shapefile ZIP, record/index/DBF structure could not be verified');
  if(before.features!==null&&after.features!==null&&before.complete&&after.complete){
   add('feature-count',before.features===after.features?'pass':'review',before.features+' input → '+after.features+' output features');
  }else add('feature-count','unavailable','Input/output counts are not directly comparable for these geometries');
