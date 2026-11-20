@@ -519,13 +519,16 @@ export async function createGISQualityReport(input,source,output,target){
  // P62: opt-in only for actual multi-layer ZIP with a Point family AND a
  // Line/Polygon family on both sides. Never assume mixed 3D, projected,
  // unknown, incomplete or structurally corrupt geometry is certifiable.
- const mixedOnly=meta=>Array.isArray(meta.geometry)&&
-   meta.geometry.includes('point')&&
-   meta.geometry.some(kind=>kind==='line'||kind==='polygon')&&
+ const supported2D=meta=>Array.isArray(meta.geometry)&&meta.geometry.length>0&&
    meta.geometry.every(kind=>['point','line','polygon'].includes(kind));
  const safeShp=meta=>meta.format!=='shp'||
    meta.shpRecordIntegrity==='pass'&&meta.shpXYBounds==='pass';
- const multiShpMixed=multiShp&&mixedOnly(before)&&mixedOnly(after)&&
+ // Do not require both sides to remain mixed: converting the ONLY Point
+ // into a Line otherwise bypasses this check while preserving total rows.
+ const families=[...before.geometry,...after.geometry];
+ const multiShpMixed=multiShp&&supported2D(before)&&supported2D(after)&&
+   families.includes('point')&&
+   families.some(kind=>kind==='line'||kind==='polygon')&&
    safeShp(before)&&safeShp(after);
  const multiShpGeometry=multiShpComplex||multiShpMixed;
  const checks=[];
