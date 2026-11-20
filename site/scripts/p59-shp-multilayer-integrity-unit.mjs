@@ -127,7 +127,10 @@ for(const [name,options,expect] of [
  assert.equal(report.input.shpLayers,2);
  assert.equal(report.input.features,2);
  assert.equal(status(report,'feature-count'),'review');
- assert.equal(status(report,'shp-geojson-attributes'),'unavailable');
+ assert.equal(status(report,'complex-geometry-values'),'review',
+  'P62 now identifies missing mixed-geometry features independently');
+ assert.equal(status(report,'shp-geojson-attributes'),undefined,
+  'P62 never compares multi-layer DBF attributes by positional row index');
  assert.throws(()=>assertNoDetectedCriticalDataLoss(report),{code:'DATA_LOSS'});
  tests++;
 }
