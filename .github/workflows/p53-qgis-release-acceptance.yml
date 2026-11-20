@@ -8,6 +8,7 @@ on:
       - 'dev/p56-*'
       - 'dev/p57-*'
       - 'dev/p58-*'
+      - 'dev/p59-*'
       - main
     paths:
       - site/scripts/p43-browser-qgis-fixtures.mjs
@@ -20,6 +21,7 @@ on:
       - site/src/lib/gdal-matrix.mjs
       - site/src/lib/quality-report.mjs
       - site/scripts/p58-null-shape-fidelity-unit.mjs
+      - site/scripts/p59-shp-multilayer-integrity-unit.mjs
       - site/src/lib/shp-xy-bounds.mjs
       - site/scripts/quality-report-smoke.mjs
       - site/scripts/p57-shp-xy-bounds-unit.mjs
@@ -81,6 +83,8 @@ jobs:
         run: node scripts/p57-shp-xy-bounds-unit.mjs
       - name: P58 ensure non-null input geometries are never silently replaced by Null Shapes
         run: node scripts/p58-null-shape-fidelity-unit.mjs
+      - name: P59 reject skipped or ambiguous secondary Shapefile layers
+        run: node scripts/p59-shp-multilayer-integrity-unit.mjs
       - name: Verify bounded KML and KMZ ExtendedData restoration with strict integrity checks
         run: npm run smoke:kml-extended-repair
       - name: Cache Playwright 1.57 three-browser binaries
